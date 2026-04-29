@@ -273,6 +273,187 @@ body:before{
   }
 }
 
+
+/* ===== שדרוג פריטים לסטייל 3D מוזיאוני ===== */
+.item{
+  min-height:128px !important;
+  border-radius:22px !important;
+  padding:10px 7px 12px !important;
+  perspective:700px;
+  transform-style:preserve-3d;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,236,180,.20), transparent 28%),
+    linear-gradient(135deg, rgba(255,255,255,.105), transparent 24%),
+    linear-gradient(180deg, rgba(25,31,46,.98), rgba(7,10,17,.99)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.10),
+    inset 0 -16px 28px rgba(0,0,0,.30),
+    0 14px 30px rgba(0,0,0,.32),
+    0 0 0 1px rgba(217,180,95,.10) !important;
+}
+.item:hover{
+  transform:translateY(-3px) rotateX(2deg) !important;
+}
+.item.selected{
+  transform:translateY(-3px) !important;
+}
+.item .ico{
+  width:58px !important;
+  height:58px !important;
+  border-radius:22px !important;
+  transform:translateZ(26px);
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255,255,255,.58), transparent 18%),
+    radial-gradient(circle at 67% 74%, rgba(0,0,0,.34), transparent 35%),
+    linear-gradient(145deg, #f8e3a2 0%, #b9812f 42%, #322313 100%) !important;
+  border:1px solid rgba(255,230,165,.48) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(255,255,255,.28),
+    inset 0 -10px 16px rgba(0,0,0,.34),
+    0 10px 20px rgba(0,0,0,.38),
+    0 0 22px rgba(217,180,95,.12) !important;
+  margin-bottom:7px;
+}
+.item .ico:before{
+  content:"";
+  position:absolute;
+  inset:7px 8px auto;
+  height:22px;
+  border-radius:16px;
+  background:linear-gradient(135deg, rgba(255,255,255,.42), rgba(255,255,255,.04), transparent);
+  pointer-events:none;
+}
+.item .ico:after{
+  content:"";
+  position:absolute;
+  inset:auto 9px -9px;
+  height:10px;
+  border-radius:50%;
+  background:radial-gradient(ellipse at center, rgba(0,0,0,.38), transparent 70%);
+  filter:blur(2px);
+}
+.item .ico svg{
+  width:34px !important;
+  height:34px !important;
+  stroke:#fff0b9 !important;
+  stroke-width:1.9 !important;
+  filter:
+    drop-shadow(0 2px 2px rgba(0,0,0,.45))
+    drop-shadow(0 0 7px rgba(255,225,145,.22)) !important;
+  position:relative;
+  z-index:2;
+}
+.item .name{
+  font-size:12.5px !important;
+  font-weight:950 !important;
+  color:#fff4d5 !important;
+  text-shadow:0 2px 10px rgba(0,0,0,.35);
+  transform:translateZ(14px);
+}
+.item .sector{
+  margin-top:2px;
+  font-size:10px !important;
+  padding:3px 8px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.055), rgba(0,0,0,.22)) !important;
+  border-color:rgba(217,180,95,.22) !important;
+  color:#cfc3aa !important;
+  transform:translateZ(10px);
+}
+.item:before{
+  inset:8px 10px auto !important;
+  height:34% !important;
+  border-radius:18px !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.20), rgba(255,255,255,.045), transparent) !important;
+  opacity:.78 !important;
+}
+.item .display-base{
+  width:54px;
+  height:10px;
+  border-radius:50%;
+  margin:-2px auto 1px;
+  background:
+    radial-gradient(ellipse at center, rgba(243,217,147,.42), rgba(217,180,95,.13) 50%, transparent 72%);
+  box-shadow:0 4px 14px rgba(217,180,95,.10);
+  transform:translateZ(8px);
+}
+.item.thief-lock:after{
+  opacity:.95 !important;
+}
+.item.thief-lock{
+  border-color:rgba(255,213,120,.92) !important;
+}
+.item.detective-mark{
+  border-color:rgba(102,231,255,.72) !important;
+  box-shadow:
+    0 0 0 3px rgba(102,231,255,.10),
+    0 0 34px rgba(102,231,255,.15),
+    inset 0 1px 0 rgba(255,255,255,.10) !important;
+}
+.item.detective-mark .ico{
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255,255,255,.58), transparent 18%),
+    radial-gradient(circle at 67% 74%, rgba(0,0,0,.34), transparent 35%),
+    linear-gradient(145deg, #d7fbff 0%, #2f9fba 48%, #122b35 100%) !important;
+  border-color:rgba(180,248,255,.50) !important;
+}
+.item.detective-mark .ico svg{
+  stroke:#e9fcff !important;
+}
+.item .badge3d{
+  position:absolute;
+  top:7px;
+  left:7px;
+  z-index:3;
+  min-width:26px;
+  height:22px;
+  padding:0 7px;
+  border-radius:999px;
+  display:none;
+  place-items:center;
+  font-size:11px;
+  font-weight:1000;
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 6px 14px rgba(0,0,0,.25);
+}
+.item.thief-lock .badge3d{
+  display:grid;
+  color:#231500;
+  background:linear-gradient(135deg,#f3d993,#b7832f);
+}
+.item.detective-mark .badge3d{
+  display:grid;
+  color:#031218;
+  background:linear-gradient(135deg,#b8f8ff,#4fdcf4);
+}
+@media(max-width:430px){
+  .item{min-height:120px !important}
+  .item .ico{width:52px !important;height:52px !important;border-radius:20px !important}
+  .item .ico svg{width:31px !important;height:31px !important}
+}
+
+
+.resultModal .artifact,
+.artifact{
+  border-radius:32px !important;
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255,255,255,.45), transparent 20%),
+    radial-gradient(circle at 70% 75%, rgba(0,0,0,.34), transparent 36%),
+    linear-gradient(145deg, #f8e3a2 0%, #b9812f 45%, #2a1d10 100%) !important;
+  border:1px solid rgba(255,230,165,.48) !important;
+  box-shadow:
+    inset 0 2px 10px rgba(255,255,255,.24),
+    inset 0 -14px 22px rgba(0,0,0,.35),
+    0 16px 34px rgba(0,0,0,.34),
+    0 0 28px rgba(217,180,95,.16) !important;
+}
+.resultModal .artifact svg,
+.artifact svg{
+  stroke:#fff0b9 !important;
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.45)) drop-shadow(0 0 8px rgba(255,225,145,.24));
+}
+
 </style>
 </head>
 <body>
@@ -339,7 +520,7 @@ function showRole(){$("resultModal")?.classList.remove("show");let role=myRole()
 async function markRoundReady(){await ref(state.roomCode).child("players/"+state.playerKey+"/roundReady").set(true)}
 async function maybeBegin(){if(state.playerKey!=="p1")return;let p=state.room.players;if(state.room.game.phase==="role"&&p.p1.roundReady&&p.p2.roundReady){await ref(state.roomCode).child("game").update({phase:"playing",startedAt:firebase.database.ServerValue.TIMESTAMP})}}
 function renderGame(){if(state.room?.game?.phase!=="ended")$("resultModal")?.classList.remove("show");let r=state.room,g=r.game,role=myRole();$("round").textContent=`${r.round}/${r.maxRounds}`;$("score").textContent=`${r.scores.thief}:${r.scores.detective}`;$("modeText").textContent=modes[r.mode].label;$("myRole").textContent=role==="thief"?"גנב":"בלש";$("myRole").className="roleTitle "+(role==="thief"?"thief":"detective");$("instruction").textContent=role==="thief"?"בחר חפץ לגניבה. הבלש לא יראה מה בחרת.":"בחר את החפץ שאתה חושב שהגנב בחר.";$("alarm").textContent=g.thiefChoiceId?"אזעקה פעילה":"מערכת שקטה";$("alarm").className="alarm "+(g.thiefChoiceId?"on":"");renderItems();renderHints();renderChat();renderResult();timerLoop()}
-function renderItems(){let g=state.room.game,role=myRole(),box=$("items");box.innerHTML="";g.items.forEach(it=>{let selected=role==="thief"?it.id===g.thiefChoiceId:it.id===g.detectiveGuessId;let b=document.createElement("button");b.className="item "+(selected?"selected ":"")+(g.phase!=="playing"?"disabled":"");b.innerHTML=`<div class="ico">${icon(it.id)}</div><div class="name">${it.name}</div><div class="sector">${role==="detective"?it.sector:"ויטרינה מאובטחת"}</div>`;b.onclick=()=>{if(g.phase!=="playing")return;if(role==="thief")chooseThief(it);else chooseDetective(it)};box.appendChild(b)})}
+function renderItems(){let g=state.room.game,role=myRole(),box=$("items");box.innerHTML="";g.items.forEach(it=>{let selected=role==="thief"?it.id===g.thiefChoiceId:it.id===g.detectiveGuessId;let selectClass=selected?(role==="thief"?"selected thief-lock ":"selected detective-mark "):"";let b=document.createElement("button");b.className="item "+selectClass+(g.phase!=="playing"?"disabled":"");b.innerHTML=`<div class="badge3d">${role==="thief"?"נעול":"חשוד"}</div><div class="ico">${icon(it.id)}</div><div class="display-base"></div><div class="name">${it.name}</div><div class="sector">${role==="detective"?it.sector:"ויטרינה מאובטחת"}</div>`;b.onclick=()=>{if(g.phase!=="playing")return;if(role==="thief")chooseThief(it);else chooseDetective(it)};box.appendChild(b)})}
 async function chooseThief(it){let g=state.room.game;if(g.thiefChoiceId)return toast("כבר בחרת חפץ");await ref(state.roomCode).child("game/thiefChoiceId").set(it.id);await replay("הגנב התחיל פעולה ליד "+it.name);addHints(it)}
 async function chooseDetective(it){let g=state.room.game;if(g.detectiveGuessId)return;await ref(state.roomCode).child("game/detectiveGuessId").set(it.id);finish(it.id===g.thiefChoiceId?"detective":"thief")}
 async function addHints(it){let hints=[`מצלמה זיהתה תנועה באזור: ${it.sector}`,"חיישן קרבה הופעל ליד ויטרינה חשובה",`נשמע צליל זכוכית קל ליד ${it.name}`];hints.forEach((h,i)=>setTimeout(async()=>{let s=await ref(state.roomCode).child("game/hints").once("value");let arr=s.val()||[];await ref(state.roomCode).child("game/hints").set([...arr,{text:h,at:Date.now()}])},700+i*1800))}
