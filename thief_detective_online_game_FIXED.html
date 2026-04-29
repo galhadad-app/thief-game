@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>גנב או בלש | משחק אונליין ל־2 שחקנים</title>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <style>
+    :root{
+      --bg:#070911;
+      --panel:#111522;
+      --panel2:#171d2e;
+      --gold:#f6c85f;
+      --cyan:#45e5ff;
+      --red:#ff4c6a;
+      --green:#58f29a;
+      --muted:#aeb6c8;
+      --white:#f6f7fb;
+      --shadow:0 22px 80px rgba(0,0,0,.42);
+      --radius:26px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(69,229,255,.16), transparent 32%),
+        radial-gradient(circle at 80% 15%, rgba(246,200,95,.14), transparent 32%),
+        linear-gradient(145deg, #060812, #0b1020 45%, #050711);
+      color:var(--white);
+      overflow-x:hidden;
+    }
+
+    body:before{
+      content:"";
+      position:fixed;
+      inset:0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size:42px 42px;
+      mask-image:linear-gradient(to bottom, rgba(0,0,0,.7), transparent 85%);
+      pointer-events:none;
+    }
+
+    .app{
+      width:min(980px,100%);
+      margin:0 auto;
+      padding:22px 16px 80px;
+    }
+
+    .hero{
+      position:relative;
+      padding:24px 18px 16px;
+      text-align:center;
+    }
+
+    .logo{
+      width:92px;
+      height:92px;
+      margin:4px auto 14px;
+      border-radius:28px;
+      display:grid;
+      place-items:center;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(255,255,255,.25), transparent 25%),
+        linear-gradient(135deg, #151b2e, #080b15);
+      border:1px solid rgba(246,200,95,.35);
+      box-shadow:0 0 36px rgba(246,200,95,.18), inset 0 0 30px rgba(69,229,255,.07);
+      animation:float 3.2s ease-in-out infinite;
+      font-size:44px;
+    }
+
+    @keyframes float{
+      0%,100%{transform:translateY(0)}
+      50%{transform:translateY(-8px)}
+    }
+
+    h1{
+      margin:0;
+      font-size:clamp(34px,7vw,62px);
+      letter-spacing:-1.5px;
+      line-height:1;
+      background:linear-gradient(90deg,#fff,#f6c85f,#45e5ff);
+      -webkit-background-clip:text;
+      color:transparent;
+    }
+
+    .tagline{
+      margin:10px auto 0;
+      color:var(--muted);
+      max-width:560px;
+      font-size:16px;
+      line-height:1.55;
+    }
+
+    .screen{display:none}
+    .screen.active{display:block}
+
+    .card{
+      background:linear-gradient(180deg, rgba(23,29,46,.92), rgba(12,15,26,.95));
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:18px;
+      backdrop-filter:blur(18px);
+    }
+
+    .home-grid{
+      display:grid;
+      gap:14px;
+      grid-template-columns:1fr;
+      max-width:620px;
+      margin:16px auto 0;
+    }
+
+    .btn{
+      appearance:none;
+      border:0;
+      border-radius:18px;
+      padding:15px 18px;
+      min-height:54px;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:800;
+      color:#060812;
+      background:linear-gradient(135deg,var(--gold),#ffe5a1);
+      box-shadow:0 14px 30px rgba(246,200,95,.2);
+      transition:.18s transform,.18s filter,.18s opacity;
+    }
+
+    .btn:active{transform:scale(.97)}
+    .btn:hover{filter:brightness(1.05)}
+    .btn.secondary{
+      color:var(--white);
+      background:linear-gradient(135deg,#202942,#111827);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:none;
+    }
+    .btn.danger{
+      color:#fff;
+      background:linear-gradient(135deg,#ff4c6a,#9b1730);
+    }
+    .btn.green{
+      color:#06110a;
+      background:linear-gradient(135deg,#58f29a,#c7ffd9);
+    }
+    .btn.cyan{
+      color:#061014;
+      background:linear-gradient(135deg,#45e5ff,#c5f8ff);
+    }
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+
+    input{
+      width:100%;
+      border:1px solid rgba(255,255,255,.13);
+      background:#090d18;
+      color:#fff;
+      padding:16px;
+      border-radius:18px;
+      font-size:18px;
+      text-align:center;
+      outline:none;
+    }
+    input:focus{border-color:rgba(69,229,255,.65);box-shadow:0 0 0 4px rgba(69,229,255,.08)}
+
+    .row{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+    .small{font-size:13px;color:var(--muted);line-height:1.5}
+    .big-code{
+      font-size:36px;
+      letter-spacing:6px;
+      font-weight:900;
+      color:var(--gold);
+      margin:12px 0;
+      direction:ltr;
+      text-align:center;
+    }
+
+    .status-bar{
+      display:grid;
+      grid-template-columns:1fr 1fr 1fr;
+      gap:10px;
+      margin:14px 0;
+    }
+    .stat{
+      background:#0b1020;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:18px;
+      padding:12px 10px;
+      text-align:center;
+    }
+    .stat b{display:block;font-size:20px;color:#fff}
+    .stat span{font-size:12px;color:var(--muted)}
+
+    .game-layout{
+      display:grid;
+      grid-template-columns:1.2fr .8fr;
+      gap:14px;
+    }
+
+    @media(max-width:760px){
+      .game-layout{grid-template-columns:1fr}
+      .status-bar{grid-template-columns:1fr 1fr}
+    }
+
+    .role-box{
+      text-align:center;
+      padding:14px;
+      border-radius:22px;
+      background:linear-gradient(135deg, rgba(246,200,95,.12), rgba(69,229,255,.08));
+      border:1px solid rgba(246,200,95,.2);
+      margin-bottom:12px;
+    }
+    .role-title{
+      font-size:28px;
+      font-weight:950;
+      margin:4px 0;
+    }
+    .thief{color:var(--red)}
+    .detective{color:var(--cyan)}
+
+    .items-grid{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:10px;
+    }
+    @media(max-width:520px){
+      .items-grid{grid-template-columns:repeat(2,1fr)}
+    }
+
+    .item{
+      position:relative;
+      border:1px solid rgba(255,255,255,.1);
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,.09), transparent 45%),
+        linear-gradient(180deg,#151b2e,#0b1020);
+      border-radius:20px;
+      min-height:112px;
+      padding:12px 8px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      cursor:pointer;
+      transition:.16s transform,.16s border-color,.16s box-shadow;
+      overflow:hidden;
+    }
+    .item:hover{transform:translateY(-3px);border-color:rgba(246,200,95,.45)}
+    .item.selected{
+      border-color:var(--gold);
+      box-shadow:0 0 0 4px rgba(246,200,95,.1), 0 0 30px rgba(246,200,95,.18);
+    }
+    .item.disabled{opacity:.55;cursor:not-allowed}
+    .emoji{font-size:34px}
+    .item-name{font-size:13px;font-weight:800;text-align:center}
+    .sector{
+      font-size:11px;
+      color:var(--muted);
+      border:1px solid rgba(255,255,255,.09);
+      padding:3px 8px;
+      border-radius:999px;
+    }
+
+    .feed{
+      display:flex;
+      flex-direction:column;
+      gap:9px;
+      max-height:340px;
+      overflow:auto;
+      padding-left:4px;
+    }
+    .hint{
+      border-radius:16px;
+      padding:11px 12px;
+      background:#0b1020;
+      border:1px solid rgba(69,229,255,.13);
+      color:#dfeaff;
+      font-size:14px;
+      line-height:1.45;
+      animation:pop .2s ease both;
+    }
+    @keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+
+    .result{
+      text-align:center;
+      display:none;
+      margin-top:14px;
+      border-radius:22px;
+      padding:18px;
+      background:linear-gradient(135deg, rgba(246,200,95,.13), rgba(255,76,106,.1));
+      border:1px solid rgba(255,255,255,.12);
+    }
+    .result.show{display:block}
+    .result h2{margin:0 0 8px;font-size:30px}
+
+    .toast{
+      position:fixed;
+      bottom:18px;
+      right:50%;
+      transform:translateX(50%) translateY(30px);
+      background:#111827;
+      color:#fff;
+      border:1px solid rgba(255,255,255,.14);
+      padding:13px 16px;
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      opacity:0;
+      pointer-events:none;
+      transition:.25s;
+      z-index:20;
+      max-width:92vw;
+      text-align:center;
+    }
+    .toast.show{opacity:1;transform:translateX(50%) translateY(0)}
+
+    .config-warning{
+      max-width:760px;
+      margin:10px auto 0;
+      border:1px solid rgba(255,76,106,.3);
+      background:rgba(255,76,106,.08);
+      color:#ffd8df;
+      border-radius:18px;
+      padding:12px;
+      font-size:13px;
+      line-height:1.55;
+      display:none;
+    }
+    .config-warning.show{display:block}
+
+    .chat{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:1fr auto;
+      gap:8px;
+    }
+    .chat input{
+      font-size:14px;
+      padding:12px;
+      text-align:right;
+    }
+    .chat-log{
+      margin-top:10px;
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      max-height:120px;
+      overflow:auto;
+    }
+    .msg{
+      font-size:13px;
+      color:#e7ecff;
+      background:#0b1020;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      padding:8px 10px;
+    }
+
+    .footer-note{
+      text-align:center;
+      margin-top:16px;
+      color:var(--muted);
+      font-size:12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div class="logo">🕵️</div>
+      <h1>גנב או בלש</h1>
+      <p class="tagline">משחק אונליין ל־2 משתתפים: אחד מנסה לגנוב חפץ סודי מהמוזיאון, והשני צריך לזהות אותו בזמן אמת לפי רמזים.</p>
+      <div id="configWarning" class="config-warning">
+        כדי שהמשחק יעבוד אונליין בין שני מכשירים, צריך להכניס Firebase Config בקוד. כרגע הקובץ יעבוד כדמו מקומי באותו דפדפן.
+      </div>
+    </section>
+
+    <section id="homeScreen" class="screen active">
+      <div class="home-grid">
+        <div class="card">
+          <button class="btn" id="createRoomBtn">צור חדר משחק חדש</button>
+          <div style="height:10px"></div>
+          <input id="joinCodeInput" placeholder="הכנס קוד חדר" maxlength="6" />
+          <div style="height:10px"></div>
+          <button class="btn secondary" id="joinRoomBtn">הצטרף לחדר</button>
+          <p class="small">שתף את קוד החדר עם שחקן נוסף. כששניכם בפנים — המשחק יתחיל.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="lobbyScreen" class="screen">
+      <div class="home-grid">
+        <div class="card" style="text-align:center">
+          <h2 style="margin:0">חדר משחק</h2>
+          <div class="big-code" id="roomCodeText">----</div>
+          <p id="lobbyStatus" class="small">ממתין לשחקן נוסף...</p>
+          <div class="row">
+            <button class="btn cyan" id="copyCodeBtn">העתק קוד</button>
+            <button class="btn danger" id="leaveBtn">יציאה</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="gameScreen" class="screen">
+      <div class="status-bar">
+        <div class="stat"><b id="timerText">20</b><span>שניות</span></div>
+        <div class="stat"><b id="roundText">1</b><span>סיבוב</span></div>
+        <div class="stat"><b id="scoreText">0 : 0</b><span>גנב : בלש</span></div>
+      </div>
+
+      <div class="game-layout">
+        <div class="card">
+          <div class="role-box">
+            <div class="small">התפקיד שלך</div>
+            <div id="roleTitle" class="role-title">---</div>
+            <div id="roleInstruction" class="small">---</div>
+          </div>
+
+          <div class="items-grid" id="itemsGrid"></div>
+
+          <div id="resultBox" class="result">
+            <h2 id="resultTitle">---</h2>
+            <p id="resultText" class="small"></p>
+            <button class="btn" id="nextRoundBtn">סיבוב הבא</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 10px">רמזים חיים</h3>
+          <div class="feed" id="hintFeed"></div>
+
+          <div class="chat">
+            <input id="chatInput" placeholder="כתוב הודעה קצרה..." maxlength="80" />
+            <button class="btn secondary" id="sendChatBtn" style="min-height:auto;padding:10px 14px">שלח</button>
+          </div>
+          <div class="chat-log" id="chatLog"></div>
+        </div>
+      </div>
+
+      <p class="footer-note">טיפ: הגנב יכול ללחוץ על חפץ מהר. הבלש צריך להמתין לרמזים ולנחש חכם.</p>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+/*
+  הוראות Firebase:
+  1. פתח Firebase Console
+  2. צור Project
+  3. צור Realtime Database
+  4. החלף את firebaseConfig בפרטים שלך
+  5. שנה hasFirebaseConfig ל-true
+*/
+
+const hasFirebaseConfig = true;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDgYh4IO8Ge3YLTyqJBKBDXFACsXaaszvQ",
+  authDomain: "thief-game1234.firebaseapp.com",
+  databaseURL: "https://thief-game1234-default-rtdb.firebaseio.com",
+  projectId: "thief-game1234",
+  storageBucket: "thief-game1234.firebasestorage.app",
+  messagingSenderId: "675586862950",
+  appId: "1:675586862950:web:30053456c19552b711a2a7"
+};
+
+let db = null;
+if (hasFirebaseConfig) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+} else {
+  document.getElementById("configWarning").classList.add("show");
+}
+
+const $ = id => document.getElementById(id);
+
+const screens = {
+  home: $("homeScreen"),
+  lobby: $("lobbyScreen"),
+  game: $("gameScreen")
+};
+
+const museumItemsBase = [
+  { id:"diamond", name:"יהלום כחול", emoji:"💎", sector:"אגף מערבי" },
+  { id:"crown", name:"כתר עתיק", emoji:"👑", sector:"אגף מלכות" },
+  { id:"painting", name:"ציור נדיר", emoji:"🖼️", sector:"גלריה שקטה" },
+  { id:"watch", name:"שעון זהב", emoji:"⌚", sector:"חדר זכוכית" },
+  { id:"scroll", name:"מסמך סודי", emoji:"📜", sector:"ארכיון" },
+  { id:"statue", name:"פסל שיש", emoji:"🗿", sector:"אולם מרכזי" },
+  { id:"key", name:"מפתח עתיק", emoji:"🗝️", sector:"כספת" },
+  { id:"vase", name:"כד מלכותי", emoji:"🏺", sector:"אגף מזרחי" },
+  { id:"coin", name:"מטבע נדיר", emoji:"🪙", sector:"תצוגת זהב" },
+  { id:"book", name:"ספר מסתורי", emoji:"📕", sector:"ספרייה" },
+  { id:"ring", name:"טבעת הקיסר", emoji:"💍", sector:"חדר אדום" },
+  { id:"mask", name:"מסכת כסף", emoji:"🎭", sector:"אגף תיאטרון" }
+];
+
+const state = {
+  roomCode:null,
+  playerId:"p_" + Math.random().toString(36).slice(2,9),
+  playerKey:null,
+  room:null,
+  unsub:null,
+  localRooms:{},
+  timer:null,
+  lastHintCount:0
+};
+
+function showScreen(name){
+  Object.values(screens).forEach(s=>s.classList.remove("active"));
+  screens[name].classList.add("active");
+}
+
+function toast(msg){
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el.t);
+  el.t = setTimeout(()=>el.classList.remove("show"), 2300);
+}
+
+function roomRef(code){
+  return db.ref("thiefDetectiveRooms/" + code);
+}
+
+function generateCode(){
+  return Math.random().toString(36).slice(2,8).toUpperCase();
+}
+
+function shuffle(arr){
+  return [...arr].sort(()=>Math.random()-.5);
+}
+
+function initialRoom(code){
+  return {
+    code,
+    createdAt: Date.now(),
+    status:"waiting",
+    round:1,
+    scores:{ thief:0, detective:0 },
+    players:{},
+    game:null,
+    chat:{}
+  };
+}
+
+function newRoundData(round){
+  const items = shuffle(museumItemsBase).slice(0, Math.min(8 + Math.floor(round / 2), 12));
+  const thiefTarget = items[Math.floor(Math.random()*items.length)];
+  return {
+    round,
+    phase:"playing",
+    startedAt: Date.now(),
+    duration: Math.max(10, 22 - round * 2),
+    items,
+    thiefTargetId: thiefTarget.id,
+    thiefChoiceId:null,
+    detectiveGuessId:null,
+    winner:null,
+    hints: []
+  };
+}
+
+async function createRoom(){
+  const code = generateCode();
+  state.roomCode = code;
+  state.playerKey = "p1";
+
+  if (db) {
+    const room = initialRoom(code);
+    room.players.p1 = { id:state.playerId, role:null, joinedAt:Date.now() };
+    await roomRef(code).set(room);
+    listenRoom(code);
+  } else {
+    const room = initialRoom(code);
+    room.players.p1 = { id:state.playerId, role:null, joinedAt:Date.now() };
+    state.localRooms[code] = room;
+    receiveRoom(room);
+  }
+
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+}
+
+async function joinRoom(){
+  const code = $("joinCodeInput").value.trim().toUpperCase();
+  if(!code) return toast("צריך להכניס קוד חדר");
+
+  state.roomCode = code;
+  state.playerKey = "p2";
+
+  if (db) {
+    const snap = await roomRef(code).once("value");
+    if(!snap.exists()) return toast("לא נמצא חדר כזה");
+    const room = snap.val();
+    if(room.players && room.players.p2) return toast("החדר כבר מלא");
+    await roomRef(code).child("players/p2").set({ id:state.playerId, role:null, joinedAt:Date.now() });
+    listenRoom(code);
+  } else {
+    return toast("בדמו מקומי צריך Firebase כדי להצטרף ממכשיר אחר");
+  }
+
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+}
+
+function listenRoom(code){
+  if(!db) return;
+  if(state.unsub) state.unsub.off();
+  const ref = roomRef(code);
+  state.unsub = ref;
+  ref.on("value", snap => {
+    const room = snap.val();
+    if(room) receiveRoom(room);
+  });
+}
+
+async function updateRoom(path, value){
+  if(db) return roomRef(state.roomCode).child(path).set(value);
+  const parts = path.split("/");
+  let obj = state.localRooms[state.roomCode];
+  for(let i=0;i<parts.length-1;i++){
+    obj[parts[i]] = obj[parts[i]] || {};
+    obj = obj[parts[i]];
+  }
+  obj[parts[parts.length-1]] = value;
+  receiveRoom(state.localRooms[state.roomCode]);
+}
+
+async function mergeRoom(obj){
+  if(db) return roomRef(state.roomCode).update(obj);
+  Object.assign(state.localRooms[state.roomCode], obj);
+  receiveRoom(state.localRooms[state.roomCode]);
+}
+
+function receiveRoom(room){
+  state.room = room;
+  const playersCount = room.players ? Object.keys(room.players).length : 0;
+
+  if(playersCount < 2){
+    $("lobbyStatus").textContent = "ממתין לשחקן נוסף...";
+    return;
+  }
+
+  if(room.status === "waiting"){
+    if(state.playerKey === "p1"){
+      startGame();
+    }
+    $("lobbyStatus").textContent = "השחקן השני הצטרף. מתחילים...";
+  }
+
+  if(room.status === "playing"){
+    showScreen("game");
+    renderGame();
+  }
+}
+
+async function startGame(){
+  const roles = Math.random() > .5
+    ? { p1:"thief", p2:"detective" }
+    : { p1:"detective", p2:"thief" };
+
+  const game = newRoundData(1);
+
+  await mergeRoom({
+    status:"playing",
+    "players/p1/role": roles.p1,
+    "players/p2/role": roles.p2,
+    game
+  });
+
+  if(db){
+    await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+    await roomRef(state.roomCode).child("game").set(game);
+    await roomRef(state.roomCode).child("status").set("playing");
+  } else {
+    state.localRooms[state.roomCode].players.p1.role = roles.p1;
+    state.localRooms[state.roomCode].players.p2.role = roles.p2;
+    state.localRooms[state.roomCode].game = game;
+    state.localRooms[state.roomCode].status = "playing";
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function myRole(){
+  return state.room?.players?.[state.playerKey]?.role || "thief";
+}
+
+function renderGame(){
+  const room = state.room;
+  const game = room.game;
+  if(!game) return;
+
+  $("roundText").textContent = room.round || game.round || 1;
+  $("scoreText").textContent = `${room.scores?.thief || 0} : ${room.scores?.detective || 0}`;
+
+  const role = myRole();
+  $("roleTitle").textContent = role === "thief" ? "גנב" : "בלש";
+  $("roleTitle").className = "role-title " + (role === "thief" ? "thief" : "detective");
+  $("roleInstruction").textContent = role === "thief"
+    ? "בחר חפץ לגניבה לפני שהבלש עולה עליך."
+    : "זהה לפי הרמזים איזה חפץ הגנב מנסה לגנוב.";
+
+  renderItems(game, role);
+  renderHints(game);
+  renderChat(room);
+  renderResult(game);
+  startTimerLoop();
+}
+
+function renderItems(game, role){
+  const grid = $("itemsGrid");
+  grid.innerHTML = "";
+  game.items.forEach(item=>{
+    const btn = document.createElement("button");
+    btn.className = "item";
+    const selected = item.id === game.thiefChoiceId || item.id === game.detectiveGuessId;
+    if(selected) btn.classList.add("selected");
+    if(game.phase !== "playing") btn.classList.add("disabled");
+
+    btn.innerHTML = `
+      <div class="emoji">${item.emoji}</div>
+      <div class="item-name">${item.name}</div>
+      <div class="sector">${role === "detective" ? item.sector : "חפץ מוזיאון"}</div>
+    `;
+
+    btn.onclick = () => {
+      if(game.phase !== "playing") return;
+      if(role === "thief") chooseThief(item.id);
+      else chooseDetective(item.id);
+    };
+
+    grid.appendChild(btn);
+  });
+}
+
+async function chooseThief(id){
+  const game = state.room.game;
+  if(game.thiefChoiceId) return toast("כבר בחרת חפץ");
+  await updateRoom("game/thiefChoiceId", id);
+  addSmartHints(id);
+  toast("הגניבה התחילה...");
+}
+
+async function chooseDetective(id){
+  const game = state.room.game;
+  if(game.detectiveGuessId) return;
+  await updateRoom("game/detectiveGuessId", id);
+  finishRound(id === game.thiefTargetId || id === game.thiefChoiceId ? "detective" : "thief", id);
+}
+
+function addSmartHints(targetId){
+  const item = state.room.game.items.find(x=>x.id === targetId);
+  if(!item) return;
+  const fake = shuffle(state.room.game.items.filter(x=>x.id!==targetId))[0];
+
+  const hints = [
+    `מצלמה זיהתה תנועה באזור: ${item.sector}`,
+    `נשמע רעש ליד תצוגה שקשורה ל־${item.name.slice(0, Math.max(3, item.name.length-2))}`,
+    `מערכת האבטחה קלטה צל חשוד ליד ${Math.random()>.45 ? item.sector : fake.sector}`,
+    `שומר המוזיאון מדווח: מישהו התקרב לחפץ יקר במיוחד`
+  ];
+
+  hints.forEach((h,i)=>{
+    setTimeout(()=>{
+      const current = state.room?.game?.hints || [];
+      updateRoom("game/hints", [...current, { text:h, at:Date.now() }]);
+    }, 900 + i*2200);
+  });
+}
+
+function renderHints(game){
+  const feed = $("hintFeed");
+  const hints = game.hints || [];
+  feed.innerHTML = "";
+  if(!hints.length){
+    feed.innerHTML = `<div class="hint">עוד אין רמזים... תסתכל טוב על המוזיאון.</div>`;
+    return;
+  }
+  hints.slice(-8).reverse().forEach(h=>{
+    const div = document.createElement("div");
+    div.className = "hint";
+    div.textContent = h.text;
+    feed.appendChild(div);
+  });
+}
+
+function startTimerLoop(){
+  clearInterval(state.timer);
+  state.timer = setInterval(()=>{
+    const game = state.room?.game;
+    if(!game || game.phase !== "playing") return;
+    const left = Math.max(0, Math.ceil((game.duration*1000 - (Date.now() - game.startedAt))/1000));
+    $("timerText").textContent = left;
+    if(left <= 0){
+      if(state.playerKey === "p1"){
+        const winner = game.detectiveGuessId ? null : "thief";
+        if(winner) finishRound(winner, null);
+      }
+    }
+  }, 250);
+}
+
+async function finishRound(winner, guessId){
+  const room = state.room;
+  const game = room.game;
+  if(game.phase === "ended") return;
+
+  const scores = {
+    thief: (room.scores?.thief || 0) + (winner === "thief" ? 1 : 0),
+    detective: (room.scores?.detective || 0) + (winner === "detective" ? 1 : 0)
+  };
+
+  if(db){
+    await roomRef(state.roomCode).child("scores").set(scores);
+    await roomRef(state.roomCode).child("game/winner").set(winner);
+    await roomRef(state.roomCode).child("game/detectiveGuessId").set(guessId || game.detectiveGuessId || null);
+    await roomRef(state.roomCode).child("game/phase").set("ended");
+  } else {
+    state.localRooms[state.roomCode].scores = scores;
+    state.localRooms[state.roomCode].game.winner = winner;
+    state.localRooms[state.roomCode].game.detectiveGuessId = guessId || game.detectiveGuessId || null;
+    state.localRooms[state.roomCode].game.phase = "ended";
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function renderResult(game){
+  const box = $("resultBox");
+  if(game.phase !== "ended"){
+    box.classList.remove("show");
+    return;
+  }
+  box.classList.add("show");
+  const target = game.items.find(x=>x.id === (game.thiefChoiceId || game.thiefTargetId));
+  $("resultTitle").textContent = game.winner === "detective" ? "הבלש תפס את הגנב!" : "הגנב ברח עם השלל!";
+  $("resultText").textContent = `החפץ היה: ${target ? target.name : "לא ידוע"}`;
+}
+
+async function nextRound(){
+  if(state.playerKey !== "p1"){
+    toast("רק יוצר החדר מתחיל סיבוב הבא");
+    return;
+  }
+
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = {
+    p1: state.room.players.p1.role,
+    p2: state.room.players.p2.role
+  };
+  const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+
+  if(db){
+    await roomRef(state.roomCode).child("round").set(round);
+    await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+    await roomRef(state.roomCode).child("game").set(newRoundData(round));
+  } else {
+    state.localRooms[state.roomCode].round = round;
+    state.localRooms[state.roomCode].players.p1.role = newRoles.p1;
+    state.localRooms[state.roomCode].players.p2.role = newRoles.p2;
+    state.localRooms[state.roomCode].game = newRoundData(round);
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+async function sendChat(){
+  const text = $("chatInput").value.trim();
+  if(!text) return;
+  $("chatInput").value = "";
+  const msg = {
+    text,
+    from: myRole() === "thief" ? "גנב" : "בלש",
+    at: Date.now()
+  };
+
+  if(db){
+    await roomRef(state.roomCode).child("chat").push(msg);
+  } else {
+    const key = "m" + Date.now();
+    state.localRooms[state.roomCode].chat[key] = msg;
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function renderChat(room){
+  const log = $("chatLog");
+  const messages = Object.values(room.chat || {}).sort((a,b)=>a.at-b.at).slice(-5);
+  log.innerHTML = "";
+  messages.forEach(m=>{
+    const div = document.createElement("div");
+    div.className = "msg";
+    div.textContent = `${m.from}: ${m.text}`;
+    log.appendChild(div);
+  });
+}
+
+function leaveGame(){
+  location.reload();
+}
+
+$("createRoomBtn").onclick = createRoom;
+$("joinRoomBtn").onclick = joinRoom;
+$("copyCodeBtn").onclick = async () => {
+  try{
+    await navigator.clipboard.writeText(state.roomCode || "");
+    toast("קוד החדר הועתק");
+  }catch(e){
+    toast("הקוד: " + state.roomCode);
+  }
+};
+$("leaveBtn").onclick = leaveGame;
+$("nextRoundBtn").onclick = nextRound;
+$("sendChatBtn").onclick = sendChat;
+$("chatInput").addEventListener("keydown", e => {
+  if(e.key === "Enter") sendChat();
+});
+$("joinCodeInput").addEventListener("input", e => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+});
+</script>
+</body>
+</html>
