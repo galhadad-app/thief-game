@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>גנב או בלש | משחק אונליין ל־2 שחקנים</title>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js">
+/* ===== FINAL FIX: ספירה לאחור מסונכרנת שלא נתקעת ===== */
+state.syncedCountdownKey = null;
+
+function getCurrentRoundKey(){
+  const round = state.room?.game?.round || state.room?.round || 1;
+  return "round_" + round;
+}
+
+function getMyRoundReadyPath(){
+  return "roundReady/" + getCurrentRoundKey() + "/" + state.playerKey;
+}
+
+function areBothReadyForRound(room){
+  const key = "round_" + (room?.game?.round || room?.round || 1);
+  const ready = room?.roundReady?.[key] || {};
+  return !!(ready.p1 && ready.p2);
+}
+
+receiveRoom = function(room){
+  state.room = room;
+
+  if(room.status === "lobby"){
+    showScreen("lobby");
+    renderLobby();
+    autoStartIfReady();
+    return;
+  }
+
+  if(room.status !== "playing" || !room.game) return;
+
+  const game = room.game;
+
+  if(game.phase === "role"){
+    showRoleScreen();
+
+    const ready = room.roundReady?.[getCurrentRoundKey()] || {};
+    const mineReady = !!ready[state.playerKey];
+
+    if($("continueToGameBtn")){
+      $("continueToGameBtn").disabled = mineReady;
+      $("continueToGameBtn").textContent = mineReady ? "מחכה לשחקן השני..." : "הבנתי, להתחיל";
+    }
+    if($("roundReadyBox")) $("roundReadyBox").classList.toggle("show", mineReady);
+
+    if(state.playerKey === "p1" && areBothReadyForRound(room)){
+      startCountdownInDatabase();
+    }
+    return;
+  }
+
+  if(game.phase === "countdown"){
+    showScreen("game");
+    renderGame();
+    runDatabaseCountdown(game.countdownStartAt || Date.now());
+    return;
+  }
+
+  if(game.phase === "playing" || game.phase === "ended"){
+    showScreen("game");
+    renderGame();
+    return;
+  }
+};
+
+continueToGame = async function(){
+  if(!state.roomCode || !state.playerKey) return;
+  await roomRef(state.roomCode).child(getMyRoundReadyPath()).set(true);
+  if($("continueToGameBtn")){
+    $("continueToGameBtn").disabled = true;
+    $("continueToGameBtn").textContent = "מחכה לשחקן השני...";
+  }
+  if($("roundReadyBox")) $("roundReadyBox").classList.add("show");
+  playSound("click");
+};
+
+async function startCountdownInDatabase(){
+  const game = state.room?.game;
+  if(!game || game.phase !== "role") return;
+  const startAt = Date.now() + 700;
+  await roomRef(state.roomCode).child("game").update({
+    phase:"countdown",
+    countdownStartAt:startAt
+  });
+}
+
+function runDatabaseCountdown(startAt){
+  const game = state.room?.game;
+  const round = game?.round || state.room?.round || 1;
+  const key = state.roomCode + "_round_" + round + "_" + startAt;
+
+  if(state.syncedCountdownKey === key) return;
+  state.syncedCountdownKey = key;
+
+  const overlay = $("countdownOverlay");
+  const num = $("countNum");
+  overlay.classList.add("show");
+
+  const interval = setInterval(async()=>{
+    const now = Date.now();
+    const remainingMs = 3700 - (now - startAt);
+    const display = Math.ceil(Math.max(0, remainingMs) / 1000);
+
+    if(display > 0){
+      num.textContent = String(display);
+      if(state.lastCountdownBeep !== display){
+        state.lastCountdownBeep = display;
+        playSound("start");
+      }
+      return;
+    }
+
+    clearInterval(interval);
+    num.textContent = "צא!";
+    playSound("alarm");
+
+    setTimeout(async()=>{
+      overlay.classList.remove("show");
+      state.lastCountdownBeep = null;
+
+      if(state.playerKey === "p1"){
+        const snap = await roomRef(state.roomCode).child("game/phase").once("value");
+        if(snap.val() === "countdown"){
+          await roomRef(state.roomCode).child("game").update({
+            phase:"playing",
+            startedAt:Date.now()
+          });
+        }
+      }
+    }, 450);
+  }, 100);
+}
+
+startGame = async function(){
+  const roles = Math.random() > .5
+    ? { p1:"thief", p2:"detective" }
+    : { p1:"detective", p2:"thief" };
+
+  const game = newRoundData(1);
+  game.phase = "role";
+  game.startedAt = null;
+  delete game.countdownStartAt;
+
+  await roomRef(state.roomCode).child("roundReady").remove();
+  await roomRef(state.roomCode).update({ status:"playing", round:1, game });
+  await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+};
+
+nextRound = async function(){
+  if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל סיבוב הבא");
+
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = {
+    p1: state.room.players.p1.role,
+    p2: state.room.players.p2.role
+  };
+  const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+  const game = newRoundData(round);
+  game.phase = "role";
+  game.startedAt = null;
+  delete game.countdownStartAt;
+
+  if($("resultBox")) $("resultBox").dataset.celebrated = "";
+  state.roleSeenRound = 0;
+  state.syncedCountdownKey = null;
+
+  await roomRef(state.roomCode).child("round").set(round);
+  await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+  await roomRef(state.roomCode).child("roundReady/" + "round_" + round).remove();
+  await roomRef(state.roomCode).child("game").set(game);
+};
+
+if($("continueToGameBtn")) $("continueToGameBtn").onclick = continueToGame;
+
+</script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <style>
+    :root{
+      --bg:#070911;
+      --panel:#111522;
+      --panel2:#171d2e;
+      --gold:#f6c85f;
+      --cyan:#45e5ff;
+      --red:#ff4c6a;
+      --green:#58f29a;
+      --muted:#aeb6c8;
+      --white:#f6f7fb;
+      --shadow:0 22px 80px rgba(0,0,0,.42);
+      --radius:26px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(69,229,255,.16), transparent 32%),
+        radial-gradient(circle at 80% 15%, rgba(246,200,95,.14), transparent 32%),
+        linear-gradient(145deg, #060812, #0b1020 45%, #050711);
+      color:var(--white);
+      overflow-x:hidden;
+    }
+
+    body:before{
+      content:"";
+      position:fixed;
+      inset:0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size:42px 42px;
+      mask-image:linear-gradient(to bottom, rgba(0,0,0,.7), transparent 85%);
+      pointer-events:none;
+    }
+
+    .app{
+      width:min(980px,100%);
+      margin:0 auto;
+      padding:22px 16px 80px;
+    }
+
+    .hero{
+      position:relative;
+      padding:24px 18px 16px;
+      text-align:center;
+    }
+
+    .logo{
+      width:92px;
+      height:92px;
+      margin:4px auto 14px;
+      border-radius:28px;
+      display:grid;
+      place-items:center;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(255,255,255,.25), transparent 25%),
+        linear-gradient(135deg, #151b2e, #080b15);
+      border:1px solid rgba(246,200,95,.35);
+      box-shadow:0 0 36px rgba(246,200,95,.18), inset 0 0 30px rgba(69,229,255,.07);
+      animation:float 3.2s ease-in-out infinite;
+      font-size:44px;
+    }
+
+    @keyframes float{
+      0%,100%{transform:translateY(0)}
+      50%{transform:translateY(-8px)}
+    }
+
+    h1{
+      margin:0;
+      font-size:clamp(34px,7vw,62px);
+      letter-spacing:-1.5px;
+      line-height:1;
+      background:linear-gradient(90deg,#fff,#f6c85f,#45e5ff);
+      -webkit-background-clip:text;
+      color:transparent;
+    }
+
+    .tagline{
+      margin:10px auto 0;
+      color:var(--muted);
+      max-width:560px;
+      font-size:16px;
+      line-height:1.55;
+    }
+
+    .screen{display:none}
+    .screen.active{display:block}
+
+    .card{
+      background:linear-gradient(180deg, rgba(23,29,46,.92), rgba(12,15,26,.95));
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:18px;
+      backdrop-filter:blur(18px);
+    }
+
+    .home-grid{
+      display:grid;
+      gap:14px;
+      grid-template-columns:1fr;
+      max-width:620px;
+      margin:16px auto 0;
+    }
+
+    .btn{
+      appearance:none;
+      border:0;
+      border-radius:18px;
+      padding:15px 18px;
+      min-height:54px;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:800;
+      color:#060812;
+      background:linear-gradient(135deg,var(--gold),#ffe5a1);
+      box-shadow:0 14px 30px rgba(246,200,95,.2);
+      transition:.18s transform,.18s filter,.18s opacity;
+    }
+
+    .btn:active{transform:scale(.97)}
+    .btn:hover{filter:brightness(1.05)}
+    .btn.secondary{
+      color:var(--white);
+      background:linear-gradient(135deg,#202942,#111827);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:none;
+    }
+    .btn.danger{
+      color:#fff;
+      background:linear-gradient(135deg,#ff4c6a,#9b1730);
+    }
+    .btn.green{
+      color:#06110a;
+      background:linear-gradient(135deg,#58f29a,#c7ffd9);
+    }
+    .btn.cyan{
+      color:#061014;
+      background:linear-gradient(135deg,#45e5ff,#c5f8ff);
+    }
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+
+    input{
+      width:100%;
+      border:1px solid rgba(255,255,255,.13);
+      background:#090d18;
+      color:#fff;
+      padding:16px;
+      border-radius:18px;
+      font-size:18px;
+      text-align:center;
+      outline:none;
+    }
+    input:focus{border-color:rgba(69,229,255,.65);box-shadow:0 0 0 4px rgba(69,229,255,.08)}
+
+    .row{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+    .small{font-size:13px;color:var(--muted);line-height:1.5}
+    .big-code{
+      font-size:36px;
+      letter-spacing:6px;
+      font-weight:900;
+      color:var(--gold);
+      margin:12px 0;
+      direction:ltr;
+      text-align:center;
+    }
+
+    .status-bar{
+      display:grid;
+      grid-template-columns:1fr 1fr 1fr;
+      gap:10px;
+      margin:14px 0;
+    }
+    .stat{
+      background:#0b1020;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:18px;
+      padding:12px 10px;
+      text-align:center;
+    }
+    .stat b{display:block;font-size:20px;color:#fff}
+    .stat span{font-size:12px;color:var(--muted)}
+
+    .game-layout{
+      display:grid;
+      grid-template-columns:1.2fr .8fr;
+      gap:14px;
+    }
+
+    @media(max-width:760px){
+      .game-layout{grid-template-columns:1fr}
+      .status-bar{grid-template-columns:1fr 1fr}
+    }
+
+    .role-box{
+      text-align:center;
+      padding:14px;
+      border-radius:22px;
+      background:linear-gradient(135deg, rgba(246,200,95,.12), rgba(69,229,255,.08));
+      border:1px solid rgba(246,200,95,.2);
+      margin-bottom:12px;
+    }
+    .role-title{
+      font-size:28px;
+      font-weight:950;
+      margin:4px 0;
+    }
+    .thief{color:var(--red)}
+    .detective{color:var(--cyan)}
+
+    .items-grid{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:10px;
+    }
+    @media(max-width:520px){
+      .items-grid{grid-template-columns:repeat(2,1fr)}
+    }
+
+    .item{
+      position:relative;
+      border:1px solid rgba(255,255,255,.1);
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,.09), transparent 45%),
+        linear-gradient(180deg,#151b2e,#0b1020);
+      border-radius:20px;
+      min-height:112px;
+      padding:12px 8px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      cursor:pointer;
+      transition:.16s transform,.16s border-color,.16s box-shadow;
+      overflow:hidden;
+    }
+    .item:hover{transform:translateY(-3px);border-color:rgba(246,200,95,.45)}
+    .item.selected{
+      border-color:var(--gold);
+      box-shadow:0 0 0 4px rgba(246,200,95,.1), 0 0 30px rgba(246,200,95,.18);
+    }
+    .item.disabled{opacity:.55;cursor:not-allowed}
+    .emoji{font-size:34px}
+    .item-name{font-size:13px;font-weight:800;text-align:center}
+    .sector{
+      font-size:11px;
+      color:var(--muted);
+      border:1px solid rgba(255,255,255,.09);
+      padding:3px 8px;
+      border-radius:999px;
+    }
+
+    .feed{
+      display:flex;
+      flex-direction:column;
+      gap:9px;
+      max-height:340px;
+      overflow:auto;
+      padding-left:4px;
+    }
+    .hint{
+      border-radius:16px;
+      padding:11px 12px;
+      background:#0b1020;
+      border:1px solid rgba(69,229,255,.13);
+      color:#dfeaff;
+      font-size:14px;
+      line-height:1.45;
+      animation:pop .2s ease both;
+    }
+    @keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+
+    .result{
+      text-align:center;
+      display:none;
+      margin-top:14px;
+      border-radius:22px;
+      padding:18px;
+      background:linear-gradient(135deg, rgba(246,200,95,.13), rgba(255,76,106,.1));
+      border:1px solid rgba(255,255,255,.12);
+    }
+    .result.show{display:block}
+    .result h2{margin:0 0 8px;font-size:30px}
+
+    .toast{
+      position:fixed;
+      bottom:18px;
+      right:50%;
+      transform:translateX(50%) translateY(30px);
+      background:#111827;
+      color:#fff;
+      border:1px solid rgba(255,255,255,.14);
+      padding:13px 16px;
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      opacity:0;
+      pointer-events:none;
+      transition:.25s;
+      z-index:20;
+      max-width:92vw;
+      text-align:center;
+    }
+    .toast.show{opacity:1;transform:translateX(50%) translateY(0)}
+
+    .config-warning{
+      max-width:760px;
+      margin:10px auto 0;
+      border:1px solid rgba(255,76,106,.3);
+      background:rgba(255,76,106,.08);
+      color:#ffd8df;
+      border-radius:18px;
+      padding:12px;
+      font-size:13px;
+      line-height:1.55;
+      display:none;
+    }
+    .config-warning.show{display:block}
+
+    .chat{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:1fr auto;
+      gap:8px;
+    }
+    .chat input{
+      font-size:14px;
+      padding:12px;
+      text-align:right;
+    }
+    .chat-log{
+      margin-top:10px;
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      max-height:120px;
+      overflow:auto;
+    }
+    .msg{
+      font-size:13px;
+      color:#e7ecff;
+      background:#0b1020;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      padding:8px 10px;
+    }
+
+    .footer-note{
+      text-align:center;
+      margin-top:16px;
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    .avatar-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0 12px}
+    .avatar-btn{background:#0b1020;border:1px solid rgba(255,255,255,.12);border-radius:16px;min-height:50px;font-size:25px;cursor:pointer;transition:.16s}
+    .avatar-btn.active{border-color:var(--gold);box-shadow:0 0 0 4px rgba(246,200,95,.10)}
+    .mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+    .mode-btn{background:#0b1020;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:10px;color:#fff;text-align:center;cursor:pointer}
+    .mode-btn.active{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(69,229,255,.08)}
+    .mode-btn b{display:block;font-size:14px}.mode-btn span{font-size:11px;color:var(--muted)}
+    .player-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0b1020;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:11px;margin:8px 0}
+    .player-info{display:flex;align-items:center;gap:9px}.player-av{width:42px;height:42px;border-radius:14px;background:#161d2e;display:grid;place-items:center;font-size:24px}
+    .ready-pill{font-size:12px;font-weight:900;border-radius:999px;padding:6px 9px;color:var(--muted);border:1px solid rgba(255,255,255,.1)}.ready-pill.on{background:var(--green);color:#06110a;border-color:transparent}
+    .countdownOverlay{position:fixed;inset:0;background:rgba(3,5,10,.84);display:none;place-items:center;z-index:99;backdrop-filter:blur(12px)}
+    .countdownOverlay.show{display:grid}.countNum{width:170px;height:170px;border-radius:50%;display:grid;place-items:center;font-size:80px;font-weight:1000;color:var(--gold);border:1px solid rgba(246,200,95,.35);box-shadow:0 0 60px rgba(246,200,95,.22);animation:pulse2 .85s ease infinite}
+    @keyframes pulse2{50%{transform:scale(1.06)}}
+    .museum-wrap{position:relative;border-radius:24px;padding:13px;background:radial-gradient(circle at top,rgba(246,200,95,.12),transparent 36%),linear-gradient(180deg,#11192a,#090d18);border:1px solid rgba(255,255,255,.09);overflow:hidden}
+    .museum-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.alarm-pill{font-size:12px;color:#ffd1d8;border:1px solid rgba(255,76,106,.25);background:rgba(255,76,106,.08);padding:5px 9px;border-radius:999px}
+    .alarm-pill.on{animation:alarmFlash .55s linear infinite}@keyframes alarmFlash{50%{box-shadow:0 0 24px rgba(255,76,106,.4)}}
+    .replay-box{display:grid;gap:7px;margin-top:10px}.replay-row{font-size:13px;color:#e8edff;background:#0b1020;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:8px 10px}
+    .confetti{position:fixed;inset:0;pointer-events:none;z-index:100;overflow:hidden}.piece{position:absolute;top:-20px;width:9px;height:14px;border-radius:3px;animation:fall 1.6s linear forwards}@keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:0}}
+  
+    /* ===== תיקון מסך משחק קומפקטי ומקצועי ===== */
+    body.playing-view .hero{
+      display:none;
+    }
+    body.playing-view .app{
+      padding-top:8px;
+    }
+    body.playing-view .status-bar{
+      position:sticky;
+      top:6px;
+      z-index:30;
+      display:flex;
+      gap:7px;
+      margin:0 0 8px;
+      padding:6px;
+      border-radius:18px;
+      background:rgba(7,10,18,.78);
+      border:1px solid rgba(255,255,255,.08);
+      backdrop-filter:blur(14px);
+      box-shadow:0 12px 34px rgba(0,0,0,.28);
+    }
+    body.playing-view .stat{
+      flex:1;
+      border-radius:13px;
+      padding:6px 5px;
+      background:rgba(11,16,32,.72);
+      border:1px solid rgba(255,255,255,.07);
+    }
+    body.playing-view .stat b{
+      font-size:15px;
+      line-height:1.05;
+    }
+    body.playing-view .stat span{
+      font-size:10px;
+    }
+    body.playing-view .game-layout{
+      gap:9px;
+    }
+    body.playing-view .card{
+      padding:10px;
+      border-radius:20px;
+    }
+    body.playing-view .role-box{
+      padding:8px 10px;
+      margin-bottom:8px;
+      border-radius:16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      text-align:right;
+      background:linear-gradient(90deg, rgba(246,200,95,.10), rgba(69,229,255,.055));
+    }
+    body.playing-view .role-box .small:first-child{
+      display:none;
+    }
+    body.playing-view .role-title{
+      font-size:20px;
+      margin:0;
+      min-width:max-content;
+    }
+    body.playing-view #roleInstruction{
+      font-size:12px;
+      line-height:1.35;
+      color:#c7cfdf;
+    }
+    body.playing-view .museum-wrap{
+      padding:8px;
+      border-radius:18px;
+      background:
+        linear-gradient(180deg, rgba(17,25,42,.92), rgba(9,13,24,.95));
+      border:1px solid rgba(255,255,255,.075);
+      box-shadow:inset 0 0 22px rgba(255,255,255,.025);
+    }
+    body.playing-view .museum-head{
+      margin-bottom:7px;
+      padding:0 2px;
+      font-size:13px;
+      color:#dfe5f2;
+    }
+    body.playing-view .alarm-pill{
+      font-size:10px;
+      padding:3px 7px;
+      opacity:.9;
+    }
+    body.playing-view .items-grid{
+      gap:7px;
+    }
+    body.playing-view .item{
+      min-height:86px;
+      border-radius:15px;
+      padding:7px 5px;
+      gap:4px;
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,.065), transparent 42%),
+        linear-gradient(180deg,#141b2c,#0b1020);
+    }
+    body.playing-view .emoji{
+      font-size:27px;
+    }
+    body.playing-view .item-name{
+      font-size:11.5px;
+      line-height:1.15;
+    }
+    body.playing-view .sector{
+      font-size:9.5px;
+      padding:2px 6px;
+    }
+    body.playing-view .feed{
+      max-height:230px;
+      gap:6px;
+    }
+    body.playing-view .hint{
+      border-radius:13px;
+      padding:8px 9px;
+      font-size:12.5px;
+    }
+    body.playing-view .chat{
+      margin-top:8px;
+    }
+    body.playing-view .chat input{
+      padding:9px 10px;
+      border-radius:13px;
+      font-size:13px;
+    }
+    body.playing-view .chat .btn,
+    body.playing-view #sendChatBtn{
+      min-height:36px !important;
+      padding:8px 10px !important;
+      border-radius:12px !important;
+      font-size:12px !important;
+    }
+    body.playing-view .chat-log{
+      max-height:82px;
+      gap:5px;
+    }
+    body.playing-view .msg{
+      font-size:12px;
+      padding:6px 8px;
+      border-radius:11px;
+    }
+    body.playing-view .footer-note{
+      display:none;
+    }
+    @media(max-width:820px){
+      body.playing-view .app{
+        padding-left:8px;
+        padding-right:8px;
+      }
+      body.playing-view .game-layout{
+        grid-template-columns:1fr;
+      }
+      body.playing-view .status-bar{
+        top:4px;
+      }
+    }
+    @media(max-width:520px){
+      body.playing-view .status-bar{
+        gap:5px;
+        padding:5px;
+      }
+      body.playing-view .stat{
+        padding:5px 3px;
+      }
+      body.playing-view .stat b{
+        font-size:14px;
+      }
+      body.playing-view .stat span{
+        font-size:9px;
+      }
+      body.playing-view .item{
+        min-height:82px;
+      }
+    }
+
+  
+    body.playing-view .items-grid{grid-template-columns:repeat(4,1fr)}
+    @media(max-width:640px){body.playing-view .items-grid{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:430px){body.playing-view .items-grid{grid-template-columns:repeat(2,1fr)}}
+
+  
+    .round-ready-box{
+      margin-top:10px;
+      padding:10px;
+      border-radius:16px;
+      background:#0b1020;
+      border:1px solid rgba(255,255,255,.09);
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.4;
+      display:none;
+    }
+    .round-ready-box.show{display:block}
+
+  
+    /* ===== שדרוג גרפיקה יוקרתי: מוזיאון, ויטרינות, פריטים, טיפוגרפיה ותוצאה ===== */
+    :root{
+      --lux-black:#05060a;
+      --lux-navy:#0a1020;
+      --lux-panel:#101827;
+      --lux-gold:#d9b45f;
+      --lux-gold-soft:#f3d993;
+      --lux-burgundy:#3b101b;
+      --lux-glass:rgba(255,255,255,.075);
+      --lux-line:rgba(217,180,95,.22);
+    }
+
+    body{
+      background:
+        radial-gradient(circle at 18% 0%, rgba(217,180,95,.12), transparent 28%),
+        radial-gradient(circle at 90% 8%, rgba(75,20,35,.18), transparent 28%),
+        linear-gradient(145deg, #030408, #080d18 45%, #04050a) !important;
+    }
+
+    body::before{
+      background-image:
+        linear-gradient(rgba(217,180,95,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(217,180,95,.028) 1px, transparent 1px) !important;
+      opacity:.7;
+    }
+
+    .card{
+      background:
+        linear-gradient(180deg, rgba(15,22,36,.94), rgba(6,8,14,.97)) !important;
+      border:1px solid rgba(217,180,95,.13) !important;
+      box-shadow:0 24px 80px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.035) !important;
+    }
+
+    .btn{
+      background:linear-gradient(135deg,#c79b43,#f3d993,#bd8d35) !important;
+      color:#08090d !important;
+      box-shadow:0 14px 34px rgba(217,180,95,.18) !important;
+    }
+
+    .btn.secondary{
+      color:#f7f2e5 !important;
+      background:linear-gradient(135deg,#171d2c,#0b0f1a) !important;
+      border:1px solid rgba(217,180,95,.16) !important;
+      box-shadow:none !important;
+    }
+
+    .role-box{
+      background:
+        linear-gradient(90deg, rgba(217,180,95,.11), rgba(59,16,27,.10), rgba(255,255,255,.025)) !important;
+      border:1px solid rgba(217,180,95,.18) !important;
+    }
+
+    body.playing-view .museum-wrap{
+      position:relative;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(243,217,147,.16), transparent 30%),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(20,24,36,.96), rgba(5,7,13,.98)) !important;
+      background-size:auto, 25% 100%, auto !important;
+      border:1px solid rgba(217,180,95,.20) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.05),
+        inset 0 -30px 60px rgba(0,0,0,.22),
+        0 18px 60px rgba(0,0,0,.36) !important;
+    }
+
+    body.playing-view .museum-wrap::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        linear-gradient(90deg, transparent 0 10%, rgba(217,180,95,.07) 10.2% 10.7%, transparent 11% 24%, rgba(217,180,95,.055) 24.2% 24.7%, transparent 25% 75%, rgba(217,180,95,.055) 75.2% 75.7%, transparent 76% 89%, rgba(217,180,95,.07) 89.2% 89.7%, transparent 90%),
+        radial-gradient(ellipse at 50% 100%, rgba(217,180,95,.08), transparent 58%);
+      pointer-events:none;
+      opacity:.85;
+    }
+
+    body.playing-view .museum-head{
+      position:relative;
+      z-index:1;
+      color:#f1e7cf !important;
+      letter-spacing:.2px;
+      font-weight:800;
+    }
+
+    body.playing-view .alarm-pill{
+      border-color:rgba(180,46,67,.30) !important;
+      background:rgba(59,16,27,.35) !important;
+      color:#f1c9cd !important;
+    }
+
+    body.playing-view .items-grid{
+      position:relative;
+      z-index:1;
+    }
+
+    body.playing-view .item{
+      min-height:104px !important;
+      border-radius:18px !important;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.09), transparent 22%),
+        radial-gradient(circle at 50% 4%, rgba(243,217,147,.16), transparent 34%),
+        linear-gradient(180deg, rgba(22,28,42,.96), rgba(7,10,17,.98)) !important;
+      border:1px solid rgba(217,180,95,.20) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.08),
+        inset 0 -12px 25px rgba(0,0,0,.22),
+        0 10px 26px rgba(0,0,0,.22) !important;
+    }
+
+    body.playing-view .item::before{
+      content:"";
+      position:absolute;
+      inset:7px 9px auto;
+      height:28%;
+      border-radius:14px;
+      background:linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.025), transparent);
+      pointer-events:none;
+      opacity:.65;
+    }
+
+    body.playing-view .item::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      transform:translateX(120%) skewX(-20deg);
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+      width:45%;
+      opacity:.0;
+      pointer-events:none;
+    }
+
+    body.playing-view .item:hover::after,
+    body.playing-view .item.selected::after{
+      opacity:.8;
+      animation:glassSweep 1.15s ease;
+    }
+
+    @keyframes glassSweep{
+      from{transform:translateX(140%) skewX(-20deg)}
+      to{transform:translateX(-260%) skewX(-20deg)}
+    }
+
+    body.playing-view .item:hover{
+      transform:translateY(-2px) !important;
+      border-color:rgba(243,217,147,.48) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.10),
+        0 12px 34px rgba(217,180,95,.12),
+        0 18px 46px rgba(0,0,0,.32) !important;
+    }
+
+    body.playing-view .item.selected{
+      border-color:rgba(243,217,147,.78) !important;
+      box-shadow:
+        0 0 0 3px rgba(217,180,95,.10),
+        0 0 32px rgba(217,180,95,.18),
+        inset 0 1px 0 rgba(255,255,255,.10) !important;
+    }
+
+    body.playing-view .emoji{
+      font-size:0 !important;
+      width:42px;
+      height:42px;
+      display:grid;
+      place-items:center;
+      border-radius:50%;
+      background:
+        radial-gradient(circle at 35% 25%, rgba(255,255,255,.28), transparent 23%),
+        linear-gradient(135deg, rgba(217,180,95,.28), rgba(110,75,28,.16));
+      border:1px solid rgba(217,180,95,.27);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.11), 0 8px 18px rgba(0,0,0,.22);
+      margin-bottom:2px;
+    }
+
+    body.playing-view .emoji svg{
+      width:27px;
+      height:27px;
+      fill:none;
+      stroke:#f3d993;
+      stroke-width:1.8;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      filter:drop-shadow(0 2px 6px rgba(217,180,95,.18));
+    }
+
+    body.playing-view .item-name{
+      color:#f4ead4 !important;
+      font-weight:850 !important;
+      letter-spacing:.1px;
+    }
+
+    body.playing-view .sector{
+      border-color:rgba(217,180,95,.15) !important;
+      color:#b9b0a0 !important;
+      background:rgba(0,0,0,.16);
+    }
+
+    body.playing-view .hint,
+    body.playing-view .msg{
+      background:linear-gradient(180deg, rgba(13,18,30,.92), rgba(7,10,17,.96)) !important;
+      border-color:rgba(217,180,95,.13) !important;
+      color:#ece5d7 !important;
+    }
+
+    body.playing-view .status-bar{
+      background:rgba(5,7,13,.78) !important;
+      border-color:rgba(217,180,95,.14) !important;
+    }
+
+    body.playing-view .stat{
+      background:rgba(12,16,27,.76) !important;
+      border-color:rgba(217,180,95,.10) !important;
+    }
+
+    body.playing-view .stat b{
+      color:#f3d993 !important;
+    }
+
+    .result.show{
+      background:
+        radial-gradient(circle at top, rgba(217,180,95,.18), transparent 40%),
+        linear-gradient(180deg, rgba(18,22,34,.97), rgba(6,8,14,.98)) !important;
+      border:1px solid rgba(217,180,95,.20) !important;
+      box-shadow:0 22px 70px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05) !important;
+    }
+
+    .result.show h2{
+      color:#f3d993;
+      font-weight:950;
+      letter-spacing:-.4px;
+    }
+
+    .case-stamp{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      margin:8px auto 10px;
+      padding:7px 15px;
+      border:2px solid rgba(217,180,95,.55);
+      border-radius:10px;
+      color:#f3d993;
+      font-weight:1000;
+      letter-spacing:1px;
+      transform:rotate(-3deg);
+      background:rgba(217,180,95,.07);
+    }
+
+    .round-artifact{
+      width:82px;
+      height:82px;
+      margin:8px auto;
+      border-radius:28px;
+      display:grid;
+      place-items:center;
+      background:
+        radial-gradient(circle at 35% 25%, rgba(255,255,255,.2), transparent 26%),
+        linear-gradient(135deg, rgba(217,180,95,.28), rgba(59,16,27,.18));
+      border:1px solid rgba(217,180,95,.28);
+      box-shadow:0 12px 34px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.08);
+    }
+
+    .round-artifact svg{
+      width:50px;
+      height:50px;
+      fill:none;
+      stroke:#f3d993;
+      stroke-width:1.65;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div class="logo">🕵️</div>
+      <h1>גנב או בלש</h1>
+      <p class="tagline">משחק אונליין ל־2 משתתפים: אחד מנסה לגנוב חפץ סודי מהמוזיאון, והשני צריך לזהות אותו בזמן אמת לפי רמזים.</p>
+      <div id="configWarning" class="config-warning">
+        כדי שהמשחק יעבוד אונליין בין שני מכשירים, צריך להכניס Firebase Config בקוד. כרגע הקובץ יעבוד כדמו מקומי באותו דפדפן.
+      </div>
+    </section>
+
+    <section id="homeScreen" class="screen active">
+      <div class="home-grid">
+        <div class="card">
+          <input id="playerNameInput" placeholder="שם שחקן" maxlength="18" />
+          <div class="avatar-grid" id="avatarGrid"></div>
+          <div class="mode-grid">
+            <button class="mode-btn active" data-mode="quick"><b>מהיר</b><span>3 סיבובים</span></button>
+            <button class="mode-btn" data-mode="classic"><b>מותח</b><span>5 סיבובים</span></button>
+            <button class="mode-btn" data-mode="hard"><b>קשה</b><span>7 סיבובים</span></button>
+          </div>
+          <button class="btn" id="createRoomBtn">צור חדר משחק חדש</button>
+          <div style="height:10px"></div>
+          <input id="joinCodeInput" placeholder="הכנס קוד חדר" maxlength="6" />
+          <div style="height:10px"></div>
+          <button class="btn secondary" id="joinRoomBtn">הצטרף לחדר</button>
+          <p class="small">שתף את קוד החדר עם שחקן נוסף. כששניכם בפנים — המשחק יתחיל.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="lobbyScreen" class="screen">
+      <div class="home-grid">
+        <div class="card" style="text-align:center">
+          <h2 style="margin:0">חדר משחק</h2>
+          <div class="big-code" id="roomCodeText">----</div>
+          <p id="lobbyStatus" class="small">ממתין לשחקן נוסף...</p>
+          <div id="playersBox"></div>
+          <div class="row">
+            <button class="btn green" id="readyBtn">אני מוכן</button>
+            <button class="btn cyan" id="copyCodeBtn">העתק קוד</button>
+            <button class="btn danger" id="leaveBtn">יציאה</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="roleScreen" class="screen">
+      <div class="home-grid">
+        <div class="card" style="text-align:center">
+          <div class="small">התפקיד שלך בסיבוב הזה</div>
+          <div id="roleRevealTitle" class="role-title">---</div>
+          <p id="roleRevealText" class="small"></p>
+          <button class="btn" id="continueToGameBtn">הבנתי, להתחיל</button>
+          <div id="roundReadyBox" class="round-ready-box">מחכה שגם השחקן השני ילחץ להתחיל...</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="gameScreen" class="screen">
+      <div class="status-bar">
+        <div class="stat"><b id="timerText">20</b><span>שניות</span></div>
+        <div class="stat"><b id="roundText">1</b><span>סיבוב</span></div>
+        <div class="stat"><b id="scoreText">0 : 0</b><span>גנב : בלש</span></div>
+      </div>
+
+      <div class="game-layout">
+        <div class="card">
+          <div class="role-box">
+            <div class="small">התפקיד שלך</div>
+            <div id="roleTitle" class="role-title">---</div>
+            <div id="roleInstruction" class="small">---</div>
+          </div>
+
+          <div class="museum-wrap" id="museumBox"><div class="museum-head"><b>גלריית האוצרות</b><span class="alarm-pill" id="alarmPill">מערכת שקטה</span></div><div class="items-grid" id="itemsGrid"></div></div>
+
+          <div id="resultBox" class="result">
+            <h2 id="resultTitle">---</h2>
+            <p id="resultText" class="small"></p>
+            <div class="replay-box" id="replayBox"></div>
+            <button class="btn" id="nextRoundBtn">סיבוב הבא</button>
+            <button class="btn secondary" id="newGameBtn" style="display:none;margin-top:8px">משחק חדש</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 8px;font-size:15px">רמזים חיים</h3>
+          <div class="feed" id="hintFeed"></div>
+
+          <div class="chat">
+            <input id="chatInput" placeholder="כתוב הודעה קצרה..." maxlength="80" />
+            <button class="btn secondary" id="sendChatBtn" style="min-height:auto;padding:10px 14px">שלח</button>
+          </div>
+          <div class="chat-log" id="chatLog"></div>
+        </div>
+      </div>
+
+      <p class="footer-note">טיפ: הגנב יכול ללחוץ על חפץ מהר. הבלש צריך להמתין לרמזים ולנחש חכם.</p>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="countdownOverlay" class="countdownOverlay"><div id="countNum" class="countNum">3</div></div>
+  <div id="confetti" class="confetti"></div>
+
+<script>
+/*
+  הוראות Firebase:
+  1. פתח Firebase Console
+  2. צור Project
+  3. צור Realtime Database
+  4. החלף את firebaseConfig בפרטים שלך
+  5. שנה hasFirebaseConfig ל-true
+*/
+
+const hasFirebaseConfig = true;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDgYh4IO8Ge3YLTyqJBKBDXFACsXaaszvQ",
+  authDomain: "thief-game1234.firebaseapp.com",
+  databaseURL: "https://thief-game1234-default-rtdb.firebaseio.com",
+  projectId: "thief-game1234",
+  storageBucket: "thief-game1234.firebasestorage.app",
+  messagingSenderId: "675586862950",
+  appId: "1:675586862950:web:30053456c19552b711a2a7"
+};
+
+let db = null;
+if (hasFirebaseConfig) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+} else {
+  document.getElementById("configWarning").classList.add("show");
+}
+
+const $ = id => document.getElementById(id);
+
+const screens = {
+  home: $("homeScreen"),
+  lobby: $("lobbyScreen"),
+  game: $("gameScreen"),
+  role: $("roleScreen")
+};
+
+const museumItemsBase = [
+  { id:"diamond", name:"יהלום כחול", emoji:"💎", sector:"אגף מערבי" },
+  { id:"crown", name:"כתר עתיק", emoji:"👑", sector:"אגף מלכות" },
+  { id:"painting", name:"ציור נדיר", emoji:"🖼️", sector:"גלריה שקטה" },
+  { id:"watch", name:"שעון זהב", emoji:"⌚", sector:"חדר זכוכית" },
+  { id:"scroll", name:"מסמך סודי", emoji:"📜", sector:"ארכיון" },
+  { id:"statue", name:"פסל שיש", emoji:"🗿", sector:"אולם מרכזי" },
+  { id:"key", name:"מפתח עתיק", emoji:"🗝️", sector:"כספת" },
+  { id:"vase", name:"כד מלכותי", emoji:"🏺", sector:"אגף מזרחי" },
+  { id:"coin", name:"מטבע נדיר", emoji:"🪙", sector:"תצוגת זהב" },
+  { id:"book", name:"ספר מסתורי", emoji:"📕", sector:"ספרייה" },
+  { id:"ring", name:"טבעת הקיסר", emoji:"💍", sector:"חדר אדום" },
+  { id:"mask", name:"מסכת כסף", emoji:"🎭", sector:"אגף תיאטרון" }
+];
+
+const state = {
+  roomCode:null,
+  playerId:"p_" + Math.random().toString(36).slice(2,9),
+  playerKey:null,
+  room:null,
+  unsub:null,
+  localRooms:{},
+  timer:null,
+  lastHintCount:0
+};
+
+function showScreen(name){
+  Object.values(screens).forEach(s=>s.classList.remove("active"));
+  screens[name].classList.add("active");
+  document.body.classList.toggle("playing-view", name === "game");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function toast(msg){
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el.t);
+  el.t = setTimeout(()=>el.classList.remove("show"), 2300);
+}
+
+function roomRef(code){
+  return db.ref("thiefDetectiveRooms/" + code);
+}
+
+function generateCode(){
+  return Math.random().toString(36).slice(2,8).toUpperCase();
+}
+
+function shuffle(arr){
+  return [...arr].sort(()=>Math.random()-.5);
+}
+
+function initialRoom(code){
+  return {
+    code,
+    createdAt: Date.now(),
+    status:"waiting",
+    round:1,
+    scores:{ thief:0, detective:0 },
+    players:{},
+    game:null,
+    chat:{}
+  };
+}
+
+function newRoundData(round){
+  const items = shuffle(museumItemsBase).slice(0, Math.min(8 + Math.floor(round / 2), 12));
+  const thiefTarget = items[Math.floor(Math.random()*items.length)];
+  return {
+    round,
+    phase:"playing",
+    startedAt: Date.now(),
+    duration: Math.max(10, 22 - round * 2),
+    items,
+    thiefTargetId: thiefTarget.id,
+    thiefChoiceId:null,
+    detectiveGuessId:null,
+    winner:null,
+    hints: []
+  };
+}
+
+async function createRoom(){
+  const code = generateCode();
+  state.roomCode = code;
+  state.playerKey = "p1";
+
+  if (db) {
+    const room = initialRoom(code);
+    room.players.p1 = { id:state.playerId, role:null, joinedAt:Date.now() };
+    await roomRef(code).set(room);
+    listenRoom(code);
+  } else {
+    const room = initialRoom(code);
+    room.players.p1 = { id:state.playerId, role:null, joinedAt:Date.now() };
+    state.localRooms[code] = room;
+    receiveRoom(room);
+  }
+
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+}
+
+async function joinRoom(){
+  const code = $("joinCodeInput").value.trim().toUpperCase();
+  if(!code) return toast("צריך להכניס קוד חדר");
+
+  state.roomCode = code;
+  state.playerKey = "p2";
+
+  if (db) {
+    const snap = await roomRef(code).once("value");
+    if(!snap.exists()) return toast("לא נמצא חדר כזה");
+    const room = snap.val();
+    if(room.players && room.players.p2) return toast("החדר כבר מלא");
+    await roomRef(code).child("players/p2").set({ id:state.playerId, role:null, joinedAt:Date.now() });
+    listenRoom(code);
+  } else {
+    return toast("בדמו מקומי צריך Firebase כדי להצטרף ממכשיר אחר");
+  }
+
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+}
+
+function listenRoom(code){
+  if(!db) return;
+  if(state.unsub) state.unsub.off();
+  const ref = roomRef(code);
+  state.unsub = ref;
+  ref.on("value", snap => {
+    const room = snap.val();
+    if(room) receiveRoom(room);
+  });
+}
+
+async function updateRoom(path, value){
+  if(db) return roomRef(state.roomCode).child(path).set(value);
+  const parts = path.split("/");
+  let obj = state.localRooms[state.roomCode];
+  for(let i=0;i<parts.length-1;i++){
+    obj[parts[i]] = obj[parts[i]] || {};
+    obj = obj[parts[i]];
+  }
+  obj[parts[parts.length-1]] = value;
+  receiveRoom(state.localRooms[state.roomCode]);
+}
+
+async function mergeRoom(obj){
+  if(db) return roomRef(state.roomCode).update(obj);
+  Object.assign(state.localRooms[state.roomCode], obj);
+  receiveRoom(state.localRooms[state.roomCode]);
+}
+
+function receiveRoom(room){
+  state.room = room;
+  const playersCount = room.players ? Object.keys(room.players).length : 0;
+
+  if(playersCount < 2){
+    $("lobbyStatus").textContent = "ממתין לשחקן נוסף...";
+    return;
+  }
+
+  if(room.status === "waiting"){
+    if(state.playerKey === "p1"){
+      startGame();
+    }
+    $("lobbyStatus").textContent = "השחקן השני הצטרף. מתחילים...";
+  }
+
+  if(room.status === "playing"){
+    showScreen("game");
+    renderGame();
+  }
+}
+
+async function startGame(){
+  const roles = Math.random() > .5
+    ? { p1:"thief", p2:"detective" }
+    : { p1:"detective", p2:"thief" };
+
+  const game = newRoundData(1);
+
+  await mergeRoom({
+    status:"playing",
+    "players/p1/role": roles.p1,
+    "players/p2/role": roles.p2,
+    game
+  });
+
+  if(db){
+    await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+    await roomRef(state.roomCode).child("game").set(game);
+    await roomRef(state.roomCode).child("status").set("playing");
+  } else {
+    state.localRooms[state.roomCode].players.p1.role = roles.p1;
+    state.localRooms[state.roomCode].players.p2.role = roles.p2;
+    state.localRooms[state.roomCode].game = game;
+    state.localRooms[state.roomCode].status = "playing";
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function myRole(){
+  return state.room?.players?.[state.playerKey]?.role || "thief";
+}
+
+function renderGame(){
+  const room = state.room;
+  const game = room.game;
+  if(!game) return;
+
+  $("roundText").textContent = room.round || game.round || 1;
+  $("scoreText").textContent = `${room.scores?.thief || 0} : ${room.scores?.detective || 0}`;
+
+  const role = myRole();
+  $("roleTitle").textContent = role === "thief" ? "גנב" : "בלש";
+  $("roleTitle").className = "role-title " + (role === "thief" ? "thief" : "detective");
+  $("roleInstruction").textContent = role === "thief"
+    ? "בחר חפץ לגניבה לפני שהבלש עולה עליך."
+    : "זהה לפי הרמזים איזה חפץ הגנב מנסה לגנוב.";
+
+  renderItems(game, role);
+  renderHints(game);
+  renderChat(room);
+  renderResult(game);
+  startTimerLoop();
+}
+
+function renderItems(game, role){
+  const grid = $("itemsGrid");
+  grid.innerHTML = "";
+  game.items.forEach(item=>{
+    const btn = document.createElement("button");
+    btn.className = "item";
+    let selected = false;
+    if (role === "thief") {
+      selected = item.id === game.thiefChoiceId;
+    } else {
+      selected = item.id === game.detectiveGuessId;
+    }
+    if(selected) btn.classList.add("selected");
+    if(game.phase !== "playing") btn.classList.add("disabled");
+
+    btn.innerHTML = `
+      <div class="emoji">${item.emoji}</div>
+      <div class="item-name">${item.name}</div>
+      <div class="sector">${role === "detective" ? item.sector : "חפץ מוזיאון"}</div>
+    `;
+
+    btn.onclick = () => {
+      if(game.phase !== "playing") return;
+      if(role === "thief") chooseThief(item.id);
+      else chooseDetective(item.id);
+    };
+
+    grid.appendChild(btn);
+  });
+}
+
+async function chooseThief(id){
+  const game = state.room.game;
+  if(game.thiefChoiceId) return toast("כבר בחרת חפץ");
+  await updateRoom("game/thiefChoiceId", id);
+  addSmartHints(id);
+  toast("הגניבה התחילה...");
+}
+
+async function chooseDetective(id){
+  const game = state.room.game;
+  if(game.detectiveGuessId) return;
+  await updateRoom("game/detectiveGuessId", id);
+  finishRound(id === game.thiefTargetId || id === game.thiefChoiceId ? "detective" : "thief", id);
+}
+
+function addSmartHints(targetId){
+  const item = state.room.game.items.find(x=>x.id === targetId);
+  if(!item) return;
+  const fake = shuffle(state.room.game.items.filter(x=>x.id!==targetId))[0];
+
+  const hints = [
+    `מצלמה זיהתה תנועה באזור: ${item.sector}`,
+    `נשמע רעש ליד תצוגה שקשורה ל־${item.name.slice(0, Math.max(3, item.name.length-2))}`,
+    `מערכת האבטחה קלטה צל חשוד ליד ${Math.random()>.45 ? item.sector : fake.sector}`,
+    `שומר המוזיאון מדווח: מישהו התקרב לחפץ יקר במיוחד`
+  ];
+
+  hints.forEach((h,i)=>{
+    setTimeout(()=>{
+      const current = state.room?.game?.hints || [];
+      updateRoom("game/hints", [...current, { text:h, at:Date.now() }]);
+    }, 900 + i*2200);
+  });
+}
+
+function renderHints(game){
+  const feed = $("hintFeed");
+  const hints = game.hints || [];
+  feed.innerHTML = "";
+  if(!hints.length){
+    feed.innerHTML = `<div class="hint">עוד אין רמזים... תסתכל טוב על המוזיאון.</div>`;
+    return;
+  }
+  hints.slice(-8).reverse().forEach(h=>{
+    const div = document.createElement("div");
+    div.className = "hint";
+    div.textContent = h.text;
+    feed.appendChild(div);
+  });
+}
+
+function startTimerLoop(){
+  clearInterval(state.timer);
+  state.timer = setInterval(()=>{
+    const game = state.room?.game;
+    if(!game || game.phase !== "playing") return;
+    const left = Math.max(0, Math.ceil((game.duration*1000 - (Date.now() - game.startedAt))/1000));
+    $("timerText").textContent = left;
+    if(left <= 0){
+      if(state.playerKey === "p1"){
+        const winner = game.detectiveGuessId ? null : "thief";
+        if(winner) finishRound(winner, null);
+      }
+    }
+  }, 250);
+}
+
+async function finishRound(winner, guessId){
+  const room = state.room;
+  const game = room.game;
+  if(game.phase === "ended") return;
+
+  const scores = {
+    thief: (room.scores?.thief || 0) + (winner === "thief" ? 1 : 0),
+    detective: (room.scores?.detective || 0) + (winner === "detective" ? 1 : 0)
+  };
+
+  if(db){
+    await roomRef(state.roomCode).child("scores").set(scores);
+    await roomRef(state.roomCode).child("game/winner").set(winner);
+    await roomRef(state.roomCode).child("game/detectiveGuessId").set(guessId || game.detectiveGuessId || null);
+    await roomRef(state.roomCode).child("game/phase").set("ended");
+  } else {
+    state.localRooms[state.roomCode].scores = scores;
+    state.localRooms[state.roomCode].game.winner = winner;
+    state.localRooms[state.roomCode].game.detectiveGuessId = guessId || game.detectiveGuessId || null;
+    state.localRooms[state.roomCode].game.phase = "ended";
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function renderResult(game){
+  const box = $("resultBox");
+  if(game.phase !== "ended"){
+    box.classList.remove("show");
+    return;
+  }
+  box.classList.add("show");
+  const target = game.items.find(x=>x.id === (game.thiefChoiceId || game.thiefTargetId));
+  $("resultTitle").textContent = game.winner === "detective" ? "הבלש תפס את הגנב!" : "הגנב ברח עם השלל!";
+  $("resultText").textContent = `החפץ היה: ${target ? target.name : "לא ידוע"}`;
+}
+
+async function nextRound(){
+  if(state.playerKey !== "p1"){
+    toast("רק יוצר החדר מתחיל סיבוב הבא");
+    return;
+  }
+
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = {
+    p1: state.room.players.p1.role,
+    p2: state.room.players.p2.role
+  };
+  const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+
+  if(db){
+    await roomRef(state.roomCode).child("round").set(round);
+    await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+    await roomRef(state.roomCode).child("game").set(newRoundData(round));
+  } else {
+    state.localRooms[state.roomCode].round = round;
+    state.localRooms[state.roomCode].players.p1.role = newRoles.p1;
+    state.localRooms[state.roomCode].players.p2.role = newRoles.p2;
+    state.localRooms[state.roomCode].game = newRoundData(round);
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+async function sendChat(){
+  const text = $("chatInput").value.trim();
+  if(!text) return;
+  $("chatInput").value = "";
+  const msg = {
+    text,
+    from: myRole() === "thief" ? "גנב" : "בלש",
+    at: Date.now()
+  };
+
+  if(db){
+    await roomRef(state.roomCode).child("chat").push(msg);
+  } else {
+    const key = "m" + Date.now();
+    state.localRooms[state.roomCode].chat[key] = msg;
+    receiveRoom(state.localRooms[state.roomCode]);
+  }
+}
+
+function renderChat(room){
+  const log = $("chatLog");
+  const messages = Object.values(room.chat || {}).sort((a,b)=>a.at-b.at).slice(-5);
+  log.innerHTML = "";
+  messages.forEach(m=>{
+    const div = document.createElement("div");
+    div.className = "msg";
+    div.textContent = `${m.from}: ${m.text}`;
+    log.appendChild(div);
+  });
+}
+
+function leaveGame(){
+  location.reload();
+}
+
+
+/* ===== שדרוג מקצועי: לובי, אווטארים, מצבים, תפקידים, ספירה, סאונד וסוף סיבוב ===== */
+const PRO_AVATARS = ["🕵️","🥷","🧠","👑","🦊","🐺","🦅","💎","⚡","🎩"];
+const PRO_MODES = { quick:{label:"מהיר", rounds:3, duration:20}, classic:{label:"מותח", rounds:5, duration:18}, hard:{label:"קשה", rounds:7, duration:14} };
+state.selectedAvatar = PRO_AVATARS[0];
+state.selectedMode = "quick";
+state.roleSeenRound = 0;
+state.countdownRunning = false;
+
+function playSound(type){
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = ({click:440,start:650,alarm:190,win:760,lose:160}[type] || 330);
+    o.type = type === "alarm" ? "sawtooth" : "sine";
+    g.gain.value = .045;
+    o.connect(g); g.connect(ctx.destination); o.start();
+    setTimeout(()=>{o.stop();ctx.close()}, type === "alarm" ? 220 : 120);
+  }catch(e){}
+}
+
+function confetti(){
+  const box = $("confetti");
+  box.innerHTML = "";
+  for(let i=0;i<34;i++){
+    const p = document.createElement("div");
+    p.className = "piece";
+    p.style.right = Math.random()*100 + "vw";
+    p.style.animationDelay = Math.random()*.35 + "s";
+    p.style.background = ["#f6c85f","#45e5ff","#58f29a","#ff4c6a","#fff"][i%5];
+    box.appendChild(p);
+  }
+  setTimeout(()=>box.innerHTML="",1900);
+}
+
+function renderAvatars(){
+  const grid = $("avatarGrid");
+  if(!grid) return;
+  grid.innerHTML = "";
+  PRO_AVATARS.forEach(a=>{
+    const b=document.createElement("button");
+    b.className="avatar-btn"+(a===state.selectedAvatar?" active":"");
+    b.textContent=a;
+    b.onclick=()=>{state.selectedAvatar=a;renderAvatars();playSound("click")};
+    grid.appendChild(b);
+  });
+}
+
+document.querySelectorAll(".mode-btn").forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll(".mode-btn").forEach(x=>x.classList.remove("active"));
+    btn.classList.add("active");
+    state.selectedMode=btn.dataset.mode;
+    playSound("click");
+  };
+});
+
+function getPlayerName(){ return (($("playerNameInput")?.value || "שחקן").trim() || "שחקן").slice(0,18); }
+function playerPayload(){ return { id:state.playerId, name:getPlayerName(), avatar:state.selectedAvatar, ready:false, role:null, joinedAt:Date.now() }; }
+
+initialRoom = function(code){
+  const mode = state.selectedMode || "quick";
+  return { code, createdAt:Date.now(), status:"lobby", mode, maxRounds:PRO_MODES[mode].rounds, round:1, scores:{thief:0,detective:0}, players:{}, game:null, chat:{} };
+};
+
+newRoundData = function(round){
+  const mode = state.room?.mode || state.selectedMode || "quick";
+  const items = shuffle(museumItemsBase).slice(0, Math.min(8 + Math.floor(round/2), 12));
+  const thiefTarget = items[Math.floor(Math.random()*items.length)];
+  return { round, phase:"role", startedAt:null, duration:Math.max(10, PRO_MODES[mode].duration - Math.floor(round/2)), items, thiefTargetId:thiefTarget.id, thiefChoiceId:null, detectiveGuessId:null, winner:null, hints:[], replay:[] };
+};
+
+createRoom = async function(){
+  const code = generateCode();
+  state.roomCode = code;
+  state.playerKey = "p1";
+  const room = initialRoom(code);
+  room.players.p1 = playerPayload();
+  await roomRef(code).set(room);
+  listenRoom(code);
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+};
+
+joinRoom = async function(){
+  const code = $("joinCodeInput").value.trim().toUpperCase();
+  if(!code) return toast("צריך להכניס קוד חדר");
+  const snap = await roomRef(code).once("value");
+  if(!snap.exists()) return toast("לא נמצא חדר כזה");
+  const room = snap.val();
+  if(room.players && room.players.p2) return toast("החדר כבר מלא");
+  state.roomCode = code;
+  state.playerKey = "p2";
+  await roomRef(code).child("players/p2").set(playerPayload());
+  listenRoom(code);
+  $("roomCodeText").textContent = code;
+  showScreen("lobby");
+};
+
+receiveRoom = function(room){
+  state.room = room;
+  if(room.status === "lobby"){
+    showScreen("lobby");
+    renderLobby();
+    autoStartIfReady();
+    return;
+  }
+  if(room.status === "playing"){
+    const game = room.game;
+    if(game && game.phase === "role" && state.roleSeenRound !== game.round){
+      showRoleScreen();
+      return;
+    }
+    showScreen("game");
+    renderGame();
+  }
+};
+
+function renderLobby(){
+  const room = state.room || {};
+  const p = room.players || {};
+  const count = Object.keys(p).length;
+  $("lobbyStatus").textContent = count < 2 ? "ממתין לשחקן נוסף..." : "שני השחקנים בפנים. לחצו מוכן.";
+  const box = $("playersBox");
+  box.innerHTML = "";
+  ["p1","p2"].forEach(key=>{
+    const pl = p[key];
+    const div = document.createElement("div");
+    div.className = "player-card";
+    div.innerHTML = pl ? `<div class="player-info"><div class="player-av">${pl.avatar||"🕵️"}</div><div><b>${pl.name||"שחקן"}</b><div class="small">${key==="p1"?"יוצר החדר":"שחקן שני"}</div></div></div><div class="ready-pill ${pl.ready?"on":""}">${pl.ready?"מוכן":"לא מוכן"}</div>` : `<div class="player-info"><div class="player-av">?</div><div><b>ממתין...</b><div class="small">שלח לו את הקוד</div></div></div><div class="ready-pill">ריק</div>`;
+    box.appendChild(div);
+  });
+  const mine = p[state.playerKey];
+  if($("readyBtn")) $("readyBtn").textContent = mine && mine.ready ? "בטל מוכן" : "אני מוכן";
+}
+
+async function toggleReady(){
+  const mine = state.room?.players?.[state.playerKey];
+  if(!mine) return;
+  await roomRef(state.roomCode).child("players/"+state.playerKey+"/ready").set(!mine.ready);
+  playSound("click");
+}
+
+async function autoStartIfReady(){
+  if(state.playerKey !== "p1") return;
+  const p = state.room?.players || {};
+  if(p.p1 && p.p2 && p.p1.ready && p.p2.ready) startGame();
+}
+
+startGame = async function(){
+  const roles = Math.random()>.5 ? {p1:"thief",p2:"detective"} : {p1:"detective",p2:"thief"};
+  const game = newRoundData(1);
+  await roomRef(state.roomCode).update({ status:"playing", round:1, game });
+  await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+};
+
+function showRoleScreen(){
+  const role = myRole();
+  $("roleRevealTitle").textContent = role === "thief" ? "גנב" : "בלש";
+  $("roleRevealTitle").className = "role-title " + (role === "thief" ? "thief" : "detective");
+  $("roleRevealText").textContent = role === "thief" ? "בחר חפץ לגניבה ונסה לברוח לפני שהבלש מזהה אותך." : "קרא את הרמזים בזמן אמת ונחש איזה חפץ הגנב בחר.";
+  if($("continueToGameBtn")){
+    $("continueToGameBtn").disabled = false;
+    $("continueToGameBtn").textContent = "הבנתי, להתחיל";
+  }
+  if($("roundReadyBox")) $("roundReadyBox").classList.remove("show");
+  showScreen("role");
+}
+
+async function continueToGame(){
+  state.roleSeenRound = state.room.game.round;
+  showScreen("game");
+  runCountdown(async()=>{
+    if(state.playerKey === "p1" && state.room.game.phase === "role"){
+      await roomRef(state.roomCode).child("game/phase").set("playing");
+      await roomRef(state.roomCode).child("game/startedAt").set(Date.now());
+    }
+  });
+}
+
+function runCountdown(done){
+  if(state.countdownRunning) return;
+  state.countdownRunning = true;
+  const overlay = $("countdownOverlay"), num = $("countNum");
+  overlay.classList.add("show");
+  let n = 3;
+  num.textContent = n;
+  playSound("start");
+  const t = setInterval(()=>{
+    n--;
+    if(n>0){ num.textContent=n; playSound("start"); }
+    else{
+      clearInterval(t);
+      num.textContent = "צא!";
+      playSound("alarm");
+      setTimeout(()=>{ overlay.classList.remove("show"); state.countdownRunning=false; done&&done(); }, 520);
+    }
+  }, 800);
+}
+
+renderGame = function(){
+  const room = state.room, game = room.game;
+  if(!game) return;
+  const max = room.maxRounds || PRO_MODES[room.mode||"quick"].rounds;
+  $("roundText").textContent = `${room.round||game.round}/${max}`;
+  $("scoreText").textContent = `${room.scores?.thief || 0} : ${room.scores?.detective || 0}`;
+  const role = myRole();
+  $("roleTitle").textContent = role === "thief" ? "גנב" : "בלש";
+  $("roleTitle").className = "role-title " + (role === "thief" ? "thief" : "detective");
+  $("roleInstruction").textContent = role === "thief" ? "בחר חפץ לגניבה. אחרי הבחירה האזעקה והרמזים יתחילו." : "בחר את החפץ שאתה חושב שהגנב גנב.";
+  if($("alarmPill")){
+    const on = game.thiefChoiceId && game.phase === "playing";
+    $("alarmPill").textContent = on ? "אזעקה פעילה" : "מערכת שקטה";
+    $("alarmPill").className = "alarm-pill " + (on ? "on" : "");
+  }
+  renderItems(game, role);
+  renderHints(game);
+  renderChat(room);
+  renderResult(game);
+  startTimerLoop();
+};
+
+async function addReplay(text){
+  const snap = await roomRef(state.roomCode).child("game/replay").once("value");
+  const current = snap.val() || [];
+  await roomRef(state.roomCode).child("game/replay").set([...current,{text,at:Date.now()}]);
+}
+
+chooseThief = async function(id){
+  const game = state.room.game;
+  if(game.thiefChoiceId) return toast("כבר בחרת חפץ");
+  const item = game.items.find(x=>x.id===id);
+  await roomRef(state.roomCode).child("game/thiefChoiceId").set(id);
+  await addReplay(`הגנב התחיל פעולה ליד ${item?.name || "חפץ"}`);
+  addSmartHints(id);
+  playSound("alarm");
+};
+
+chooseDetective = async function(id){
+  const game = state.room.game;
+  if(game.detectiveGuessId) return;
+  await roomRef(state.roomCode).child("game/detectiveGuessId").set(id);
+  await addReplay("הבלש ביצע ניחוש");
+  finishRound(id === game.thiefChoiceId ? "detective" : "thief", id);
+};
+
+finishRound = async function(winner, guessId){
+  const room = state.room, game = room.game;
+  if(game.phase === "ended") return;
+  const scores = { thief:(room.scores?.thief||0)+(winner==="thief"?1:0), detective:(room.scores?.detective||0)+(winner==="detective"?1:0) };
+  await roomRef(state.roomCode).child("scores").set(scores);
+  await roomRef(state.roomCode).child("game/winner").set(winner);
+  await roomRef(state.roomCode).child("game/detectiveGuessId").set(guessId || game.detectiveGuessId || null);
+  await roomRef(state.roomCode).child("game/phase").set("ended");
+  await addReplay(winner === "detective" ? "הבלש תפס את הגנב" : "הגנב ברח מהמוזיאון");
+};
+
+renderResult = function(game){
+  const box = $("resultBox");
+  if(game.phase !== "ended"){
+    box.classList.remove("show");
+    return;
+  }
+  box.classList.add("show");
+  const target = game.items.find(x=>x.id === (game.thiefChoiceId || game.thiefTargetId));
+  $("resultTitle").textContent = game.winner === "detective" ? "הבלש תפס את הגנב!" : "הגנב ברח עם השלל!";
+  $("resultText").textContent = `החפץ היה: ${target ? target.name : "לא ידוע"} ${target ? target.emoji : ""}`;
+  const replay = $("replayBox");
+  if(replay){
+    replay.innerHTML = "";
+    (game.replay || []).slice(-5).forEach(r=>{
+      const div=document.createElement("div");
+      div.className="replay-row";
+      div.textContent=r.text;
+      replay.appendChild(div);
+    });
+  }
+  if(game.winner === myRole() && !box.dataset.celebrated){ box.dataset.celebrated="1"; confetti(); playSound("win"); }
+  const max = state.room.maxRounds || PRO_MODES[state.room.mode||"quick"].rounds;
+  const finished = (state.room.round || 1) >= max;
+  $("nextRoundBtn").style.display = finished ? "none" : "";
+  if($("newGameBtn")) $("newGameBtn").style.display = finished ? "" : "none";
+  if(finished) $("resultTitle").textContent += " המשחק הסתיים";
+};
+
+nextRound = async function(){
+  if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל סיבוב הבא");
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = { p1:state.room.players.p1.role, p2:state.room.players.p2.role };
+  const newRoles = { p1:oldRoles.p2, p2:oldRoles.p1 };
+  $("resultBox").dataset.celebrated = "";
+  state.roleSeenRound = 0;
+  await roomRef(state.roomCode).child("round").set(round);
+  await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+  await roomRef(state.roomCode).child("game").set(newRoundData(round));
+};
+
+async function newGame(){
+  if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל משחק חדש");
+  await roomRef(state.roomCode).update({status:"lobby",round:1,scores:{thief:0,detective:0},game:null});
+  await roomRef(state.roomCode).child("players/p1/ready").set(false);
+  await roomRef(state.roomCode).child("players/p2/ready").set(false);
+}
+
+
+/* ===== תיקון סנכרון התחלת סיבוב בין 2 השחקנים ===== */
+
+function roundReadyPath(){
+  const round = state.room?.game?.round || state.room?.round || 1;
+  return "roundReady/round_" + round + "/" + state.playerKey;
+}
+
+function bothPlayersRoundReady(room){
+  const round = room?.game?.round || room?.round || 1;
+  const r = room?.roundReady?.["round_" + round] || {};
+  return !!(r.p1 && r.p2);
+}
+
+receiveRoom = function(room){
+  state.room = room;
+
+  if(room.status === "lobby"){
+    showScreen("lobby");
+    renderLobby();
+    autoStartIfReady();
+    return;
+  }
+
+  if(room.status === "playing"){
+    const game = room.game;
+
+    if(game && game.phase === "role"){
+      showRoleScreen();
+
+      const round = game.round || room.round || 1;
+      const ready = room.roundReady?.["round_" + round] || {};
+      const mineReady = !!ready[state.playerKey];
+
+      if($("continueToGameBtn")) $("continueToGameBtn").disabled = mineReady;
+      if($("continueToGameBtn")) $("continueToGameBtn").textContent = mineReady ? "מחכה לשחקן השני..." : "הבנתי, להתחיל";
+      if($("roundReadyBox")) $("roundReadyBox").classList.toggle("show", mineReady);
+
+      if(state.playerKey === "p1" && bothPlayersRoundReady(room)){
+        beginSyncedCountdown();
+      }
+      return;
+    }
+
+    if(game && game.phase === "countdown"){
+      showScreen("game");
+      renderGame();
+      runSharedCountdown(game.countdownStartAt);
+      return;
+    }
+
+    if(game && game.phase === "playing"){
+      showScreen("game");
+      renderGame();
+      return;
+    }
+
+    if(game && game.phase === "ended"){
+      showScreen("game");
+      renderGame();
+      return;
+    }
+  }
+};
+
+continueToGame = async function(){
+  if(!state.room || !state.room.game) return;
+  await roomRef(state.roomCode).child(roundReadyPath()).set(true);
+  if($("continueToGameBtn")){
+    $("continueToGameBtn").disabled = true;
+    $("continueToGameBtn").textContent = "מחכה לשחקן השני...";
+  }
+  if($("roundReadyBox")) $("roundReadyBox").classList.add("show");
+  playSound("click");
+};
+
+async function beginSyncedCountdown(){
+  const game = state.room?.game;
+  if(!game || game.phase !== "role") return;
+
+  const countdownStartAt = Date.now() + 900;
+  await roomRef(state.roomCode).child("game/phase").set("countdown");
+  await roomRef(state.roomCode).child("game/countdownStartAt").set(countdownStartAt);
+}
+
+function runSharedCountdown(startAt){
+  if(state.countdownRunning) return;
+  state.countdownRunning = true;
+
+  const overlay = $("countdownOverlay");
+  const num = $("countNum");
+  overlay.classList.add("show");
+
+  const tick = setInterval(async()=>{
+    const now = Date.now();
+    const elapsed = Math.max(0, now - (startAt || now));
+    const left = Math.ceil((3000 - elapsed) / 1000);
+
+    if(left > 0){
+      num.textContent = left;
+      if(left !== state.lastCountdownBeep){
+        state.lastCountdownBeep = left;
+        playSound("start");
+      }
+    } else {
+      clearInterval(tick);
+      num.textContent = "צא!";
+      playSound("alarm");
+
+      setTimeout(async()=>{
+        overlay.classList.remove("show");
+        state.countdownRunning = false;
+        state.lastCountdownBeep = null;
+
+        if(state.playerKey === "p1" && state.room?.game?.phase === "countdown"){
+          await roomRef(state.roomCode).child("game/phase").set("playing");
+          await roomRef(state.roomCode).child("game/startedAt").set(Date.now());
+        }
+      }, 520);
+    }
+  }, 120);
+}
+
+nextRound = async function(){
+  if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל סיבוב הבא");
+
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = {
+    p1: state.room.players.p1.role,
+    p2: state.room.players.p2.role
+  };
+  const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+
+  if($("resultBox")) $("resultBox").dataset.celebrated = "";
+  state.roleSeenRound = 0;
+
+  await roomRef(state.roomCode).child("round").set(round);
+  await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+  await roomRef(state.roomCode).child("roundReady/round_" + round).remove();
+  await roomRef(state.roomCode).child("game").set(newRoundData(round));
+};
+
+startGame = async function(){
+  const roles = Math.random() > .5
+    ? { p1:"thief", p2:"detective" }
+    : { p1:"detective", p2:"thief" };
+
+  const game = newRoundData(1);
+
+  await roomRef(state.roomCode).child("roundReady").remove();
+  await roomRef(state.roomCode).update({ status:"playing", round:1, game });
+  await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+};
+
+
+
+/* ===== Premium museum icons and result reveal ===== */
+function artifactIcon(id){
+  const icons = {
+    diamond:`<svg viewBox="0 0 64 64"><path d="M12 22h40L32 54 12 22Z"/><path d="M20 22 27 10h10l7 12"/><path d="M24 22 32 54 40 22"/><path d="M27 10 32 22l5-12"/></svg>`,
+    crown:`<svg viewBox="0 0 64 64"><path d="M12 48h40"/><path d="M16 46 13 20l13 12 6-18 6 18 13-12-3 26Z"/><path d="M22 48h20"/><circle cx="13" cy="20" r="3"/><circle cx="32" cy="14" r="3"/><circle cx="51" cy="20" r="3"/></svg>`,
+    painting:`<svg viewBox="0 0 64 64"><rect x="12" y="14" width="40" height="34" rx="3"/><path d="M18 41 28 31l8 7 6-6 8 9"/><circle cx="41" cy="24" r="4"/></svg>`,
+    watch:`<svg viewBox="0 0 64 64"><path d="M24 10h16l-3 11H27l-3-11Z"/><circle cx="32" cy="34" r="14"/><path d="M27 47h10l3 7H24l3-7Z"/><path d="M32 26v9l7 4"/></svg>`,
+    scroll:`<svg viewBox="0 0 64 64"><path d="M20 14h28v36H18c-5 0-7-7-2-10"/><path d="M20 14c-6 0-8 8-2 10h26"/><path d="M25 32h17M25 39h13"/></svg>`,
+    statue:`<svg viewBox="0 0 64 64"><path d="M25 14h14l3 12-10 8-10-8 3-12Z"/><path d="M28 34h8l4 16H24l4-16Z"/><path d="M18 54h28"/><path d="M29 21h.1M35 21h.1"/></svg>`,
+    key:`<svg viewBox="0 0 64 64"><circle cx="23" cy="25" r="10"/><path d="M31 32 52 53"/><path d="M44 45h8M39 40h6"/><circle cx="23" cy="25" r="3"/></svg>`,
+    vase:`<svg viewBox="0 0 64 64"><path d="M24 12h16"/><path d="M27 12c0 8-8 10-8 22 0 12 6 18 13 18s13-6 13-18c0-12-8-14-8-22"/><path d="M23 28h18"/></svg>`,
+    coin:`<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/><ellipse cx="32" cy="32" rx="10" ry="20"/><path d="M18 26h28M18 38h28"/></svg>`,
+    book:`<svg viewBox="0 0 64 64"><path d="M14 14h28c5 0 8 3 8 8v30H22c-5 0-8-3-8-8V14Z"/><path d="M22 14v38"/><path d="M28 24h14M28 32h12"/></svg>`,
+    ring:`<svg viewBox="0 0 64 64"><circle cx="32" cy="38" r="16"/><path d="M25 24 32 10l7 14"/><path d="M25 24h14"/></svg>`,
+    mask:`<svg viewBox="0 0 64 64"><path d="M12 22c8-6 16-3 20 2 4-5 12-8 20-2 0 18-8 28-20 28S12 40 12 22Z"/><path d="M22 32c4-3 8-3 11 0M42 32c-4-3-8-3-11 0"/><path d="M25 42c4 3 10 3 14 0"/></svg>`
+  };
+  return icons[id] || icons.diamond;
+}
+
+renderItems = function(game, role){
+  const grid = $("itemsGrid");
+  grid.innerHTML = "";
+
+  game.items.forEach(item=>{
+    const btn = document.createElement("button");
+    let selected = false;
+    if (role === "thief") {
+      selected = item.id === game.thiefChoiceId;
+    } else {
+      selected = item.id === game.detectiveGuessId;
+    }
+
+    btn.className = "item" + (selected ? " selected" : "") + (game.phase !== "playing" ? " disabled" : "");
+    btn.innerHTML = `
+      <div class="emoji">${artifactIcon(item.id)}</div>
+      <div class="item-name">${item.name}</div>
+      <div class="sector">${role === "detective" ? item.sector : "ויטרינה מאובטחת"}</div>
+    `;
+    btn.onclick = () => {
+      if(game.phase !== "playing") return;
+      playSound("click");
+      if(role === "thief") chooseThief(item.id);
+      else chooseDetective(item.id);
+    };
+    grid.appendChild(btn);
+  });
+};
+
+renderResult = function(game){
+  const box = $("resultBox");
+  if(game.phase !== "ended"){
+    box.classList.remove("show");
+    return;
+  }
+  box.classList.add("show");
+  const target = game.items.find(x=>x.id === (game.thiefChoiceId || game.thiefTargetId));
+  const caught = game.winner === "detective";
+
+  $("resultTitle").textContent = caught ? "הבלש תפס את הגנב!" : "הגנב ברח עם השלל!";
+  $("resultText").innerHTML = `
+    <div class="case-stamp">${caught ? "CASE CLOSED" : "ESCAPED"}</div>
+    <div class="round-artifact">${target ? artifactIcon(target.id) : ""}</div>
+    <div>החפץ היה: <b>${target ? target.name : "לא ידוע"}</b></div>
+  `;
+
+  const replay = $("replayBox");
+  if(replay){
+    replay.innerHTML = "";
+    (game.replay || []).slice(-5).forEach(r=>{
+      const div=document.createElement("div");
+      div.className="replay-row";
+      div.textContent=r.text;
+      replay.appendChild(div);
+    });
+  }
+
+  if(game.winner === myRole() && !box.dataset.celebrated){
+    box.dataset.celebrated="1";
+    confetti();
+    playSound("win");
+  }
+
+  const max = state.room.maxRounds || PRO_MODES[state.room.mode||"quick"].rounds;
+  const finished = (state.room.round || 1) >= max;
+  $("nextRoundBtn").style.display = finished ? "none" : "";
+  if($("newGameBtn")) $("newGameBtn").style.display = finished ? "" : "none";
+  if(finished) $("resultTitle").textContent += " המשחק הסתיים";
+};
+
+$("createRoomBtn").onclick = createRoom;
+$("joinRoomBtn").onclick = joinRoom;
+$("copyCodeBtn").onclick = async () => {
+  try{
+    await navigator.clipboard.writeText(state.roomCode || "");
+    toast("קוד החדר הועתק");
+  }catch(e){
+    toast("הקוד: " + state.roomCode);
+  }
+};
+$("leaveBtn").onclick = leaveGame;
+$("nextRoundBtn").onclick = nextRound;
+if($("readyBtn")) $("readyBtn").onclick = toggleReady;
+if($("continueToGameBtn")) $("continueToGameBtn").onclick = continueToGame;
+if($("newGameBtn")) $("newGameBtn").onclick = newGame;
+$("sendChatBtn").onclick = sendChat;
+$("chatInput").addEventListener("keydown", e => {
+  if(e.key === "Enter") sendChat();
+});
+$("joinCodeInput").addEventListener("input", e => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+});
+renderAvatars();
+</script>
+</body>
+</html>
