@@ -35,6 +35,148 @@ input{width:100%;border:1px solid rgba(217,180,95,.15);background:#080d18;color:
 .side h3{font-size:15px;margin:0 0 8px}.feed{display:flex;flex-direction:column;gap:6px;max-height:230px;overflow:auto}.hint,.msg{background:linear-gradient(180deg,rgba(13,18,30,.92),rgba(7,10,17,.96));border:1px solid rgba(217,180,95,.13);color:#ece5d7;border-radius:13px;padding:8px 9px;font-size:12.5px;line-height:1.45}.chat{margin-top:8px;display:grid;grid-template-columns:1fr auto;gap:8px}.chat input{text-align:right;padding:9px 10px;border-radius:13px;font-size:13px}.chatLog{margin-top:8px;display:grid;gap:5px;max-height:82px;overflow:auto}
 .result{display:none;text-align:center;margin-top:10px;border-radius:22px;padding:15px;background:radial-gradient(circle at top,rgba(217,180,95,.18),transparent 40%),linear-gradient(180deg,rgba(18,22,34,.97),rgba(6,8,14,.98));border:1px solid rgba(217,180,95,.2)}.result.show{display:block}.result h2{margin:0 0 8px;color:var(--gold2)}.stamp{display:inline-flex;margin:6px auto 8px;padding:7px 15px;border:2px solid rgba(217,180,95,.55);border-radius:10px;color:var(--gold2);font-weight:1000;letter-spacing:1px;transform:rotate(-3deg);background:rgba(217,180,95,.07)}.artifact{width:82px;height:82px;margin:8px auto;border-radius:28px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(217,180,95,.28),rgba(59,16,27,.18));border:1px solid rgba(217,180,95,.28)}.artifact svg{width:50px;height:50px;fill:none;stroke:var(--gold2);stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}.replay{display:grid;gap:6px;margin-top:9px}.replay div{font-size:12px;background:#0b1020;border:1px solid rgba(217,180,95,.12);border-radius:12px;padding:7px}
 .toast{position:fixed;right:50%;bottom:18px;transform:translateX(50%) translateY(25px);opacity:0;transition:.2s;background:#111827;color:#fff;border:1px solid rgba(217,180,95,.16);padding:12px 15px;border-radius:15px;z-index:110}.toast.show{opacity:1;transform:translateX(50%) translateY(0)}
+
+/* ===== גרפיקה יוקרתית נקייה ===== */
+body{
+  background:
+    radial-gradient(circle at 18% 0%,rgba(217,180,95,.16),transparent 28%),
+    radial-gradient(circle at 84% 8%,rgba(75,20,35,.20),transparent 30%),
+    radial-gradient(circle at 50% 110%,rgba(217,180,95,.09),transparent 36%),
+    linear-gradient(145deg,#030408,#080e1a 48%,#030408) !important;
+}
+body:before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(217,180,95,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(217,180,95,.025) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:linear-gradient(to bottom,#000,transparent 90%);
+}
+.card{
+  background:
+    linear-gradient(180deg,rgba(18,25,40,.96),rgba(6,8,14,.985)) !important;
+  border:1px solid rgba(217,180,95,.16) !important;
+  box-shadow:0 24px 80px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+.museum{
+  position:relative;
+  background:
+    radial-gradient(circle at 50% 0%,rgba(243,217,147,.18),transparent 30%),
+    linear-gradient(90deg,transparent 0 10%,rgba(217,180,95,.06) 10.2% 10.8%,transparent 11% 24%,rgba(217,180,95,.045) 24.2% 24.8%,transparent 25% 75%,rgba(217,180,95,.045) 75.2% 75.8%,transparent 76% 89%,rgba(217,180,95,.06) 89.2% 89.8%,transparent 90%),
+    linear-gradient(180deg,rgba(20,24,36,.97),rgba(5,7,13,.99)) !important;
+  border:1px solid rgba(217,180,95,.23) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    inset 0 -32px 60px rgba(0,0,0,.22),
+    0 18px 60px rgba(0,0,0,.38) !important;
+}
+.museum:after{
+  content:"";
+  position:absolute;
+  inset:auto 0 0;
+  height:24%;
+  background:radial-gradient(ellipse at center,rgba(217,180,95,.09),transparent 65%);
+  pointer-events:none;
+}
+.museumHead{position:relative;z-index:2;letter-spacing:.2px}
+.items{position:relative;z-index:2}
+.item{
+  position:relative;
+  overflow:hidden;
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.10),transparent 24%),
+    radial-gradient(circle at 50% 4%,rgba(243,217,147,.18),transparent 34%),
+    linear-gradient(180deg,rgba(22,28,42,.97),rgba(7,10,17,.99)) !important;
+  border:1px solid rgba(217,180,95,.23) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.085),
+    inset 0 -12px 25px rgba(0,0,0,.24),
+    0 10px 26px rgba(0,0,0,.24) !important;
+  transition:.18s transform,.18s border-color,.18s box-shadow,.18s opacity;
+}
+.item:before{
+  content:"";
+  position:absolute;
+  inset:7px 9px auto;
+  height:28%;
+  border-radius:14px;
+  background:linear-gradient(135deg,rgba(255,255,255,.17),rgba(255,255,255,.025),transparent);
+  pointer-events:none;
+  opacity:.68;
+}
+.item:after{
+  content:"";
+  position:absolute;
+  top:0;bottom:0;width:45%;
+  right:-70%;
+  transform:skewX(-20deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);
+  opacity:0;
+  pointer-events:none;
+}
+.item:hover{
+  transform:translateY(-2px);
+  border-color:rgba(243,217,147,.50) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.10),
+    0 12px 34px rgba(217,180,95,.12),
+    0 18px 46px rgba(0,0,0,.32) !important;
+}
+.item:hover:after,.item.selected:after{
+  opacity:.85;
+  animation:glassSweep 1.15s ease;
+}
+@keyframes glassSweep{
+  from{right:-70%}
+  to{right:125%}
+}
+.item.selected{
+  border-color:rgba(243,217,147,.82) !important;
+  box-shadow:0 0 0 3px rgba(217,180,95,.10),0 0 32px rgba(217,180,95,.20),inset 0 1px 0 rgba(255,255,255,.10) !important;
+}
+.ico{
+  position:relative;z-index:1;
+  background:
+    radial-gradient(circle at 35% 25%,rgba(255,255,255,.28),transparent 23%),
+    linear-gradient(135deg,rgba(217,180,95,.32),rgba(110,75,28,.17)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 18px rgba(0,0,0,.24);
+}
+.ico svg{
+  filter:drop-shadow(0 2px 6px rgba(217,180,95,.18));
+}
+.name,.sector{position:relative;z-index:1}
+.hint,.msg{
+  background:linear-gradient(180deg,rgba(13,18,30,.94),rgba(7,10,17,.98)) !important;
+  border-color:rgba(217,180,95,.15) !important;
+}
+.result.show{
+  background:
+    radial-gradient(circle at top,rgba(217,180,95,.20),transparent 42%),
+    linear-gradient(180deg,rgba(18,22,34,.98),rgba(6,8,14,.99)) !important;
+  border-color:rgba(217,180,95,.24) !important;
+  box-shadow:0 22px 70px rgba(0,0,0,.44), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.result h2{
+  color:var(--gold2);
+  font-weight:1000;
+  letter-spacing:-.3px;
+}
+.stamp{
+  text-shadow:0 0 16px rgba(217,180,95,.18);
+}
+.artifact{
+  background:
+    radial-gradient(circle at 35% 25%,rgba(255,255,255,.20),transparent 26%),
+    linear-gradient(135deg,rgba(217,180,95,.30),rgba(59,16,27,.20)) !important;
+  box-shadow:0 12px 34px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.09);
+}
+.alarm.on{
+  animation:luxAlarm .7s ease-in-out infinite;
+}
+@keyframes luxAlarm{
+  50%{box-shadow:0 0 20px rgba(255,76,106,.38);border-color:rgba(255,76,106,.46)}
+}
+
 </style>
 </head>
 <body>
@@ -57,7 +199,23 @@ function ref(c){return db.ref("thiefDetectiveRooms/"+c)}function makeCode(){retu
 function pname(){return($("nameInput").value.trim()||"שחקן").slice(0,18)}function pData(){return{id:state.playerId,name:pname(),avatar:state.avatar,ready:false,role:null,roundReady:false,joinedAt:Date.now()}}
 function baseRoom(c){return{code:c,status:"lobby",mode:state.mode,maxRounds:modes[state.mode].rounds,round:1,scores:{thief:0,detective:0},players:{},game:null,chat:{},createdAt:Date.now()}}
 function roundData(r,mode){let arr=shuffle(itemsBase).slice(0,Math.min(8+Math.floor(r/2),12));return{round:r,phase:"role",items:arr,duration:Math.max(10,modes[mode].duration-Math.floor(r/2)),startedAt:null,thiefChoiceId:null,detectiveGuessId:null,winner:null,hints:[],replay:[]}}
-function icon(id){return `<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/><path d="M20 34h24M32 14v36"/></svg>`}
+function icon(id){
+ const icons={
+  diamond:`<svg viewBox="0 0 64 64"><path d="M12 22h40L32 54 12 22Z"/><path d="M20 22 27 10h10l7 12"/><path d="M24 22 32 54 40 22"/><path d="M27 10 32 22l5-12"/></svg>`,
+  crown:`<svg viewBox="0 0 64 64"><path d="M12 48h40"/><path d="M16 46 13 20l13 12 6-18 6 18 13-12-3 26Z"/><path d="M22 48h20"/><circle cx="13" cy="20" r="3"/><circle cx="32" cy="14" r="3"/><circle cx="51" cy="20" r="3"/></svg>`,
+  painting:`<svg viewBox="0 0 64 64"><rect x="12" y="14" width="40" height="34" rx="3"/><path d="M18 41 28 31l8 7 6-6 8 9"/><circle cx="41" cy="24" r="4"/></svg>`,
+  watch:`<svg viewBox="0 0 64 64"><path d="M24 10h16l-3 11H27l-3-11Z"/><circle cx="32" cy="34" r="14"/><path d="M27 47h10l3 7H24l3-7Z"/><path d="M32 26v9l7 4"/></svg>`,
+  scroll:`<svg viewBox="0 0 64 64"><path d="M20 14h28v36H18c-5 0-7-7-2-10"/><path d="M20 14c-6 0-8 8-2 10h26"/><path d="M25 32h17M25 39h13"/></svg>`,
+  statue:`<svg viewBox="0 0 64 64"><path d="M25 14h14l3 12-10 8-10-8 3-12Z"/><path d="M28 34h8l4 16H24l4-16Z"/><path d="M18 54h28"/><path d="M29 21h.1M35 21h.1"/></svg>`,
+  key:`<svg viewBox="0 0 64 64"><circle cx="23" cy="25" r="10"/><path d="M31 32 52 53"/><path d="M44 45h8M39 40h6"/><circle cx="23" cy="25" r="3"/></svg>`,
+  vase:`<svg viewBox="0 0 64 64"><path d="M24 12h16"/><path d="M27 12c0 8-8 10-8 22 0 12 6 18 13 18s13-6 13-18c0-12-8-14-8-22"/><path d="M23 28h18"/></svg>`,
+  coin:`<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/><ellipse cx="32" cy="32" rx="10" ry="20"/><path d="M18 26h28M18 38h28"/></svg>`,
+  book:`<svg viewBox="0 0 64 64"><path d="M14 14h28c5 0 8 3 8 8v30H22c-5 0-8-3-8-8V14Z"/><path d="M22 14v38"/><path d="M28 24h14M28 32h12"/></svg>`,
+  ring:`<svg viewBox="0 0 64 64"><circle cx="32" cy="38" r="16"/><path d="M25 24 32 10l7 14"/><path d="M25 24h14"/></svg>`,
+  mask:`<svg viewBox="0 0 64 64"><path d="M12 22c8-6 16-3 20 2 4-5 12-8 20-2 0 18-8 28-20 28S12 40 12 22Z"/><path d="M22 32c4-3 8-3 11 0M42 32c-4-3-8-3-11 0"/><path d="M25 42c4 3 10 3 14 0"/></svg>`
+ };
+ return icons[id]||icons.diamond;
+}
 function renderAvatars(){let g=$("avatarGrid");g.innerHTML="";avatars.forEach(a=>{let b=document.createElement("button");b.className="avatar"+(a===state.avatar?" active":"");b.textContent=a;b.onclick=()=>{state.avatar=a;renderAvatars()};g.appendChild(b)})}
 document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{document.querySelectorAll(".mode").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.mode=b.dataset.mode});
 async function createRoom(){let c=makeCode();state.roomCode=c;state.playerKey="p1";let r=baseRoom(c);r.players.p1=pData();await ref(c).set(r);listen(c);$("codeText").textContent=c;show("lobby")}
