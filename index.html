@@ -181,6 +181,197 @@ nextRound = async function(){
 
 if($("continueToGameBtn")) $("continueToGameBtn").onclick = continueToGame;
 
+
+/* ===== HARD RESET FIX: countdown stable and no stuck overlay ===== */
+(function(){
+  let localCountdownTimer = null;
+  let localCountdownKey = null;
+
+  window.roundKey = function(room){
+    const r = room?.game?.round || room?.round || 1;
+    return "round_" + r;
+  };
+
+  window.markRoundReady = async function(){
+    if(!state.roomCode || !state.playerKey || !state.room?.game) return;
+    const key = roundKey(state.room);
+    await roomRef(state.roomCode).child("roundReady/" + key + "/" + state.playerKey).set(true);
+    const btn = $("continueToGameBtn");
+    if(btn){
+      btn.disabled = true;
+      btn.textContent = "מחכה לשחקן השני...";
+    }
+    const box = $("roundReadyBox");
+    if(box) box.classList.add("show");
+    playSound("click");
+  };
+
+  window.hostMayStartCountdown = async function(room){
+    if(state.playerKey !== "p1") return;
+    if(!room || !room.game || room.game.phase !== "role") return;
+    const ready = room.roundReady?.[roundKey(room)] || {};
+    if(!(ready.p1 && ready.p2)) return;
+
+    const snap = await roomRef(state.roomCode).child("game/phase").once("value");
+    if(snap.val() !== "role") return;
+
+    await roomRef(state.roomCode).child("game").update({
+      phase: "countdown",
+      countdownStartAt: firebase.database.ServerValue.TIMESTAMP
+    });
+  };
+
+  window.startLocalCountdown = function(startAt){
+    const game = state.room?.game;
+    const key = `${state.roomCode}_${game?.round || 1}_${startAt || 0}`;
+    if(localCountdownKey === key) return;
+
+    localCountdownKey = key;
+    if(localCountdownTimer) clearInterval(localCountdownTimer);
+
+    const overlay = $("countdownOverlay");
+    const num = $("countNum");
+    overlay.classList.add("show");
+
+    const safeStart = Number(startAt) || Date.now();
+
+    function paint(){
+      const elapsed = Date.now() - safeStart;
+      const left = Math.ceil((3000 - elapsed) / 1000);
+
+      if(left > 0){
+        num.textContent = String(left);
+        return;
+      }
+
+      if(localCountdownTimer) clearInterval(localCountdownTimer);
+      localCountdownTimer = null;
+
+      num.textContent = "צא!";
+      setTimeout(async()=>{
+        overlay.classList.remove("show");
+
+        if(state.playerKey === "p1"){
+          const phaseSnap = await roomRef(state.roomCode).child("game/phase").once("value");
+          if(phaseSnap.val() === "countdown"){
+            await roomRef(state.roomCode).child("game").update({
+              phase: "playing",
+              startedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+          }
+        }
+      }, 350);
+    }
+
+    paint();
+    localCountdownTimer = setInterval(paint, 120);
+
+    // absolute failsafe: never leave overlay stuck
+    setTimeout(()=>{
+      if(overlay.classList.contains("show")){
+        overlay.classList.remove("show");
+      }
+    }, 5200);
+  };
+
+  window.receiveRoom = function(room){
+    state.room = room;
+
+    if(room.status === "lobby"){
+      $("countdownOverlay")?.classList.remove("show");
+      showScreen("lobby");
+      renderLobby();
+      autoStartIfReady();
+      return;
+    }
+
+    if(room.status !== "playing" || !room.game) return;
+
+    const game = room.game;
+
+    if(game.phase === "role"){
+      $("countdownOverlay")?.classList.remove("show");
+      showRoleScreen();
+
+      const ready = room.roundReady?.[roundKey(room)] || {};
+      const mineReady = !!ready[state.playerKey];
+
+      const btn = $("continueToGameBtn");
+      if(btn){
+        btn.disabled = mineReady;
+        btn.textContent = mineReady ? "מחכה לשחקן השני..." : "הבנתי, להתחיל";
+        btn.onclick = markRoundReady;
+      }
+
+      const box = $("roundReadyBox");
+      if(box) box.classList.toggle("show", mineReady);
+
+      hostMayStartCountdown(room);
+      return;
+    }
+
+    if(game.phase === "countdown"){
+      showScreen("game");
+      renderGame();
+      startLocalCountdown(game.countdownStartAt || Date.now());
+      return;
+    }
+
+    if(game.phase === "playing" || game.phase === "ended"){
+      $("countdownOverlay")?.classList.remove("show");
+      showScreen("game");
+      renderGame();
+      return;
+    }
+  };
+
+  window.continueToGame = markRoundReady;
+
+  window.startGame = async function(){
+    const roles = Math.random() > .5
+      ? { p1:"thief", p2:"detective" }
+      : { p1:"detective", p2:"thief" };
+
+    const game = newRoundData(1);
+    game.phase = "role";
+    game.startedAt = null;
+    game.countdownStartAt = null;
+
+    await roomRef(state.roomCode).child("roundReady").remove();
+    await roomRef(state.roomCode).update({ status:"playing", round:1, game });
+    await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+  };
+
+  window.nextRound = async function(){
+    if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל סיבוב הבא");
+
+    const round = (state.room.round || 1) + 1;
+    const oldRoles = {
+      p1: state.room.players.p1.role,
+      p2: state.room.players.p2.role
+    };
+    const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+
+    const game = newRoundData(round);
+    game.phase = "role";
+    game.startedAt = null;
+    game.countdownStartAt = null;
+
+    if($("resultBox")) $("resultBox").dataset.celebrated = "";
+    localCountdownKey = null;
+
+    await roomRef(state.roomCode).child("round").set(round);
+    await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+    await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+    await roomRef(state.roomCode).child("roundReady/round_" + round).remove();
+    await roomRef(state.roomCode).child("game").set(game);
+  };
+
+  if($("continueToGameBtn")) $("continueToGameBtn").onclick = markRoundReady;
+  if($("nextRoundBtn")) $("nextRoundBtn").onclick = nextRound;
+})();
+
 </script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
