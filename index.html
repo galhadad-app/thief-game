@@ -5,7 +5,183 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>גנב או בלש | משחק אונליין ל־2 שחקנים</title>
 
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js">
+/* ===== FINAL FIX: ספירה לאחור מסונכרנת שלא נתקעת ===== */
+state.syncedCountdownKey = null;
+
+function getCurrentRoundKey(){
+  const round = state.room?.game?.round || state.room?.round || 1;
+  return "round_" + round;
+}
+
+function getMyRoundReadyPath(){
+  return "roundReady/" + getCurrentRoundKey() + "/" + state.playerKey;
+}
+
+function areBothReadyForRound(room){
+  const key = "round_" + (room?.game?.round || room?.round || 1);
+  const ready = room?.roundReady?.[key] || {};
+  return !!(ready.p1 && ready.p2);
+}
+
+receiveRoom = function(room){
+  state.room = room;
+
+  if(room.status === "lobby"){
+    showScreen("lobby");
+    renderLobby();
+    autoStartIfReady();
+    return;
+  }
+
+  if(room.status !== "playing" || !room.game) return;
+
+  const game = room.game;
+
+  if(game.phase === "role"){
+    showRoleScreen();
+
+    const ready = room.roundReady?.[getCurrentRoundKey()] || {};
+    const mineReady = !!ready[state.playerKey];
+
+    if($("continueToGameBtn")){
+      $("continueToGameBtn").disabled = mineReady;
+      $("continueToGameBtn").textContent = mineReady ? "מחכה לשחקן השני..." : "הבנתי, להתחיל";
+    }
+    if($("roundReadyBox")) $("roundReadyBox").classList.toggle("show", mineReady);
+
+    if(state.playerKey === "p1" && areBothReadyForRound(room)){
+      startCountdownInDatabase();
+    }
+    return;
+  }
+
+  if(game.phase === "countdown"){
+    showScreen("game");
+    renderGame();
+    runDatabaseCountdown(game.countdownStartAt || Date.now());
+    return;
+  }
+
+  if(game.phase === "playing" || game.phase === "ended"){
+    showScreen("game");
+    renderGame();
+    return;
+  }
+};
+
+continueToGame = async function(){
+  if(!state.roomCode || !state.playerKey) return;
+  await roomRef(state.roomCode).child(getMyRoundReadyPath()).set(true);
+  if($("continueToGameBtn")){
+    $("continueToGameBtn").disabled = true;
+    $("continueToGameBtn").textContent = "מחכה לשחקן השני...";
+  }
+  if($("roundReadyBox")) $("roundReadyBox").classList.add("show");
+  playSound("click");
+};
+
+async function startCountdownInDatabase(){
+  const game = state.room?.game;
+  if(!game || game.phase !== "role") return;
+  const startAt = Date.now() + 700;
+  await roomRef(state.roomCode).child("game").update({
+    phase:"countdown",
+    countdownStartAt:startAt
+  });
+}
+
+function runDatabaseCountdown(startAt){
+  const game = state.room?.game;
+  const round = game?.round || state.room?.round || 1;
+  const key = state.roomCode + "_round_" + round + "_" + startAt;
+
+  if(state.syncedCountdownKey === key) return;
+  state.syncedCountdownKey = key;
+
+  const overlay = $("countdownOverlay");
+  const num = $("countNum");
+  overlay.classList.add("show");
+
+  const interval = setInterval(async()=>{
+    const now = Date.now();
+    const remainingMs = 3700 - (now - startAt);
+    const display = Math.ceil(Math.max(0, remainingMs) / 1000);
+
+    if(display > 0){
+      num.textContent = String(display);
+      if(state.lastCountdownBeep !== display){
+        state.lastCountdownBeep = display;
+        playSound("start");
+      }
+      return;
+    }
+
+    clearInterval(interval);
+    num.textContent = "צא!";
+    playSound("alarm");
+
+    setTimeout(async()=>{
+      overlay.classList.remove("show");
+      state.lastCountdownBeep = null;
+
+      if(state.playerKey === "p1"){
+        const snap = await roomRef(state.roomCode).child("game/phase").once("value");
+        if(snap.val() === "countdown"){
+          await roomRef(state.roomCode).child("game").update({
+            phase:"playing",
+            startedAt:Date.now()
+          });
+        }
+      }
+    }, 450);
+  }, 100);
+}
+
+startGame = async function(){
+  const roles = Math.random() > .5
+    ? { p1:"thief", p2:"detective" }
+    : { p1:"detective", p2:"thief" };
+
+  const game = newRoundData(1);
+  game.phase = "role";
+  game.startedAt = null;
+  delete game.countdownStartAt;
+
+  await roomRef(state.roomCode).child("roundReady").remove();
+  await roomRef(state.roomCode).update({ status:"playing", round:1, game });
+  await roomRef(state.roomCode).child("players/p1/role").set(roles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(roles.p2);
+};
+
+nextRound = async function(){
+  if(state.playerKey !== "p1") return toast("רק יוצר החדר מתחיל סיבוב הבא");
+
+  const round = (state.room.round || 1) + 1;
+  const oldRoles = {
+    p1: state.room.players.p1.role,
+    p2: state.room.players.p2.role
+  };
+  const newRoles = { p1: oldRoles.p2, p2: oldRoles.p1 };
+  const game = newRoundData(round);
+  game.phase = "role";
+  game.startedAt = null;
+  delete game.countdownStartAt;
+
+  if($("resultBox")) $("resultBox").dataset.celebrated = "";
+  state.roleSeenRound = 0;
+  state.syncedCountdownKey = null;
+
+  await roomRef(state.roomCode).child("round").set(round);
+  await roomRef(state.roomCode).child("players/p1/role").set(newRoles.p1);
+  await roomRef(state.roomCode).child("players/p2/role").set(newRoles.p2);
+  await roomRef(state.roomCode).child("roundReady/" + "round_" + round).remove();
+  await roomRef(state.roomCode).child("game").set(game);
+};
+
+if($("continueToGameBtn")) $("continueToGameBtn").onclick = continueToGame;
+
+</script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
   <style>
