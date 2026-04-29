@@ -454,6 +454,129 @@ body:before{
   filter:drop-shadow(0 2px 2px rgba(0,0,0,.45)) drop-shadow(0 0 8px rgba(255,225,145,.24));
 }
 
+
+/* ===== תיקון פריטים: אובייקט בלבד ב־3D + ויטרינה קומפקטית ===== */
+.items{
+  gap:6px !important;
+}
+.item{
+  min-height:96px !important;
+  border-radius:17px !important;
+  padding:8px 5px 9px !important;
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(243,217,147,.12), transparent 35%),
+    linear-gradient(180deg, rgba(18,24,36,.90), rgba(7,10,17,.96)) !important;
+  border:1px solid rgba(217,180,95,.18) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    inset 0 -10px 22px rgba(0,0,0,.22),
+    0 8px 18px rgba(0,0,0,.22) !important;
+  gap:3px !important;
+}
+.item:before{
+  inset:6px 8px auto !important;
+  height:30px !important;
+  border-radius:14px !important;
+  background:linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.025), transparent) !important;
+  opacity:.55 !important;
+}
+.item:hover{
+  transform:translateY(-2px) !important;
+}
+.item .ico{
+  width:46px !important;
+  height:46px !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  margin:0 auto 2px !important;
+  transform:none !important;
+  filter:
+    drop-shadow(0 8px 10px rgba(0,0,0,.42))
+    drop-shadow(0 0 10px rgba(217,180,95,.18));
+}
+.item .ico:before,
+.item .ico:after{
+  display:none !important;
+}
+.item .ico svg{
+  width:44px !important;
+  height:44px !important;
+  stroke-width:1.7 !important;
+  stroke:#f7d98a !important;
+  fill:url(#gold3d) !important;
+  filter:
+    drop-shadow(0 2px 1px rgba(255,255,255,.10))
+    drop-shadow(0 5px 6px rgba(0,0,0,.42))
+    drop-shadow(0 0 8px rgba(217,180,95,.18)) !important;
+}
+.item .display-base{
+  width:46px !important;
+  height:7px !important;
+  margin:-2px auto 2px !important;
+  opacity:.75;
+  background:radial-gradient(ellipse at center, rgba(217,180,95,.32), rgba(217,180,95,.08) 52%, transparent 72%) !important;
+  box-shadow:none !important;
+}
+.item .name{
+  font-size:11px !important;
+  line-height:1.12 !important;
+  font-weight:850 !important;
+  color:#f7edd5 !important;
+}
+.item .sector{
+  font-size:9px !important;
+  padding:1px 6px !important;
+  opacity:.75;
+}
+.item.selected{
+  border-color:rgba(243,217,147,.70) !important;
+  box-shadow:
+    0 0 0 2px rgba(217,180,95,.10),
+    0 0 24px rgba(217,180,95,.14),
+    inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+.item.detective-mark{
+  border-color:rgba(102,231,255,.60) !important;
+  box-shadow:
+    0 0 0 2px rgba(102,231,255,.08),
+    0 0 24px rgba(102,231,255,.12),
+    inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+.item.detective-mark .ico svg{
+  stroke:#c9fbff !important;
+  filter:
+    drop-shadow(0 5px 6px rgba(0,0,0,.42))
+    drop-shadow(0 0 10px rgba(102,231,255,.22)) !important;
+}
+.item .badge3d{
+  top:5px !important;
+  left:5px !important;
+  height:18px !important;
+  min-width:22px !important;
+  padding:0 6px !important;
+  font-size:9px !important;
+  opacity:.9;
+}
+@media(max-width:430px){
+  .item{
+    min-height:88px !important;
+    padding:7px 4px 8px !important;
+  }
+  .item .ico{
+    width:40px !important;
+    height:40px !important;
+  }
+  .item .ico svg{
+    width:39px !important;
+    height:39px !important;
+  }
+  .item .name{
+    font-size:10.5px !important;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -490,19 +613,27 @@ function pname(){return($("nameInput").value.trim()||"שחקן").slice(0,18)}fun
 function baseRoom(c){return{code:c,status:"lobby",mode:state.mode,maxRounds:modes[state.mode].rounds,round:1,scores:{thief:0,detective:0},players:{},game:null,chat:{},createdAt:Date.now()}}
 function roundData(r,mode){let arr=shuffle(itemsBase).slice(0,Math.min(8+Math.floor(r/2),12));return{round:r,phase:"role",items:arr,duration:Math.max(10,modes[mode].duration-Math.floor(r/2)),startedAt:null,thiefChoiceId:null,detectiveGuessId:null,winner:null,hints:[],replay:[]}}
 function icon(id){
+ const defs=`<defs>
+  <linearGradient id="gold3d" x1="18%" y1="5%" x2="82%" y2="95%">
+    <stop offset="0%" stop-color="#fff6c8"/>
+    <stop offset="38%" stop-color="#e5bd5f"/>
+    <stop offset="72%" stop-color="#9c6728"/>
+    <stop offset="100%" stop-color="#3a2815"/>
+  </linearGradient>
+ </defs>`;
  const icons={
-  diamond:`<svg viewBox="0 0 64 64"><path d="M12 22h40L32 54 12 22Z"/><path d="M20 22 27 10h10l7 12"/><path d="M24 22 32 54 40 22"/><path d="M27 10 32 22l5-12"/></svg>`,
-  crown:`<svg viewBox="0 0 64 64"><path d="M12 48h40"/><path d="M16 46 13 20l13 12 6-18 6 18 13-12-3 26Z"/><path d="M22 48h20"/><circle cx="13" cy="20" r="3"/><circle cx="32" cy="14" r="3"/><circle cx="51" cy="20" r="3"/></svg>`,
-  painting:`<svg viewBox="0 0 64 64"><rect x="12" y="14" width="40" height="34" rx="3"/><path d="M18 41 28 31l8 7 6-6 8 9"/><circle cx="41" cy="24" r="4"/></svg>`,
-  watch:`<svg viewBox="0 0 64 64"><path d="M24 10h16l-3 11H27l-3-11Z"/><circle cx="32" cy="34" r="14"/><path d="M27 47h10l3 7H24l3-7Z"/><path d="M32 26v9l7 4"/></svg>`,
-  scroll:`<svg viewBox="0 0 64 64"><path d="M20 14h28v36H18c-5 0-7-7-2-10"/><path d="M20 14c-6 0-8 8-2 10h26"/><path d="M25 32h17M25 39h13"/></svg>`,
-  statue:`<svg viewBox="0 0 64 64"><path d="M25 14h14l3 12-10 8-10-8 3-12Z"/><path d="M28 34h8l4 16H24l4-16Z"/><path d="M18 54h28"/><path d="M29 21h.1M35 21h.1"/></svg>`,
-  key:`<svg viewBox="0 0 64 64"><circle cx="23" cy="25" r="10"/><path d="M31 32 52 53"/><path d="M44 45h8M39 40h6"/><circle cx="23" cy="25" r="3"/></svg>`,
-  vase:`<svg viewBox="0 0 64 64"><path d="M24 12h16"/><path d="M27 12c0 8-8 10-8 22 0 12 6 18 13 18s13-6 13-18c0-12-8-14-8-22"/><path d="M23 28h18"/></svg>`,
-  coin:`<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/><ellipse cx="32" cy="32" rx="10" ry="20"/><path d="M18 26h28M18 38h28"/></svg>`,
-  book:`<svg viewBox="0 0 64 64"><path d="M14 14h28c5 0 8 3 8 8v30H22c-5 0-8-3-8-8V14Z"/><path d="M22 14v38"/><path d="M28 24h14M28 32h12"/></svg>`,
-  ring:`<svg viewBox="0 0 64 64"><circle cx="32" cy="38" r="16"/><path d="M25 24 32 10l7 14"/><path d="M25 24h14"/></svg>`,
-  mask:`<svg viewBox="0 0 64 64"><path d="M12 22c8-6 16-3 20 2 4-5 12-8 20-2 0 18-8 28-20 28S12 40 12 22Z"/><path d="M22 32c4-3 8-3 11 0M42 32c-4-3-8-3-11 0"/><path d="M25 42c4 3 10 3 14 0"/></svg>`
+  diamond:`<svg viewBox="0 0 64 64">${defs}<path d="M12 22h40L32 54 12 22Z"/><path d="M20 22 27 10h10l7 12"/><path d="M24 22 32 54 40 22"/><path d="M27 10 32 22l5-12"/></svg>`,
+  crown:`<svg viewBox="0 0 64 64">${defs}<path d="M16 46 13 20l13 12 6-18 6 18 13-12-3 26Z"/><path d="M12 48h40"/><circle cx="13" cy="20" r="3"/><circle cx="32" cy="14" r="3"/><circle cx="51" cy="20" r="3"/></svg>`,
+  painting:`<svg viewBox="0 0 64 64">${defs}<rect x="12" y="14" width="40" height="34" rx="3"/><path d="M18 41 28 31l8 7 6-6 8 9"/><circle cx="41" cy="24" r="4"/></svg>`,
+  watch:`<svg viewBox="0 0 64 64">${defs}<path d="M24 10h16l-3 11H27l-3-11Z"/><circle cx="32" cy="34" r="14"/><path d="M27 47h10l3 7H24l3-7Z"/><path d="M32 26v9l7 4"/></svg>`,
+  scroll:`<svg viewBox="0 0 64 64">${defs}<path d="M20 14h28v36H18c-5 0-7-7-2-10"/><path d="M20 14c-6 0-8 8-2 10h26"/><path d="M25 32h17M25 39h13"/></svg>`,
+  statue:`<svg viewBox="0 0 64 64">${defs}<path d="M25 14h14l3 12-10 8-10-8 3-12Z"/><path d="M28 34h8l4 16H24l4-16Z"/><path d="M18 54h28"/></svg>`,
+  key:`<svg viewBox="0 0 64 64">${defs}<circle cx="23" cy="25" r="10"/><path d="M31 32 52 53"/><path d="M44 45h8M39 40h6"/><circle cx="23" cy="25" r="3"/></svg>`,
+  vase:`<svg viewBox="0 0 64 64">${defs}<path d="M24 12h16"/><path d="M27 12c0 8-8 10-8 22 0 12 6 18 13 18s13-6 13-18c0-12-8-14-8-22"/><path d="M23 28h18"/></svg>`,
+  coin:`<svg viewBox="0 0 64 64">${defs}<circle cx="32" cy="32" r="20"/><ellipse cx="32" cy="32" rx="10" ry="20"/><path d="M18 26h28M18 38h28"/></svg>`,
+  book:`<svg viewBox="0 0 64 64">${defs}<path d="M14 14h28c5 0 8 3 8 8v30H22c-5 0-8-3-8-8V14Z"/><path d="M22 14v38"/><path d="M28 24h14M28 32h12"/></svg>`,
+  ring:`<svg viewBox="0 0 64 64">${defs}<circle cx="32" cy="38" r="16"/><path d="M25 24 32 10l7 14"/><path d="M25 24h14"/></svg>`,
+  mask:`<svg viewBox="0 0 64 64">${defs}<path d="M12 22c8-6 16-3 20 2 4-5 12-8 20-2 0 18-8 28-20 28S12 40 12 22Z"/><path d="M22 32c4-3 8-3 11 0M42 32c-4-3-8-3-11 0"/><path d="M25 42c4 3 10 3 14 0"/></svg>`
  };
  return icons[id]||icons.diamond;
 }
